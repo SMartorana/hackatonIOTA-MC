@@ -7,10 +7,11 @@
 
 module nplex::registry {
     use iota::table::{Self, Table};
+    use std::type_name::{Self, TypeName};
 
     // ==================== Error Codes ====================
 
-    /// Hash is not registered in the registry
+    /// Hash is not registered in the registry or has been revoked
     const E_HASH_NOT_APPROVED: u64 = 1;
     
     /// Hash has already been used to create an LTC1 contract
@@ -19,7 +20,15 @@ module nplex::registry {
     /// Hash has been revoked by NPLEX
     const E_HASH_REVOKED: u64 = 3;
 
+    /// Executor module is not authorized to bind hashes
+    const E_UNAUTHORIZED_EXECUTOR: u64 = 4;
+
     // ==================== Structs ====================
+
+    /// Hot potato struct to ensure hash usage flow
+    public struct HashClaim {
+        document_hash: vector<u8>
+    }
 
     /// Admin capability - only NPLEX holds this
     /// This is a "hot potato" pattern - whoever owns this can admin the registry
@@ -33,6 +42,8 @@ module nplex::registry {
         id: UID,
         /// Maps document hash -> package information
         approved_hashes: Table<vector<u8>, HashInfo>,
+        /// Maps TypeName (of the executor witness) -> is_allowed
+        allowed_executors: Table<TypeName, bool>,
     }
 
     /// Information about an approved hash
@@ -62,6 +73,7 @@ module nplex::registry {
         let registry = NPLEXRegistry {
             id: object::new(ctx),
             approved_hashes: table::new(ctx),
+            allowed_executors: table::new(ctx),
         };
         transfer::share_object(registry);
     }
@@ -94,6 +106,7 @@ module nplex::registry {
         _admin_cap: &NPLEXAdminCap,
         document_hash: vector<u8>
     ) {
+        assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
         let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
         hash_info.is_revoked = true;
     }
@@ -104,23 +117,47 @@ module nplex::registry {
         _admin_cap: &NPLEXAdminCap,
         document_hash: vector<u8>
     ) {
+        assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
         let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
         hash_info.is_revoked = false;
     }
 
+    /// Add an allowed executor module
+    /// Invariant: only callable by NPLEX admin
+    public entry fun add_executor<T>(
+        registry: &mut NPLEXRegistry,
+        _admin_cap: &NPLEXAdminCap,
+    ) {
+        let type_name = type_name::get<T>();
+        if (!table::contains(&registry.allowed_executors, type_name)) {
+            table::add(&mut registry.allowed_executors, type_name, true);
+        };
+    }
+
+    /// Remove an allowed executor module
+    /// Invariant: only callable by NPLEX admin
+    public entry fun remove_executor<T>(
+        registry: &mut NPLEXRegistry,
+        _admin_cap: &NPLEXAdminCap,
+    ) {
+        let type_name = type_name::get<T>();
+        if (table::contains(&registry.allowed_executors, type_name)) {
+            table::remove(&mut registry.allowed_executors, type_name);
+        };
+    }
+
     // ==================== Validation Functions ====================
 
-    /// Mark a hash as used (called by LTC1 contract during creation)
-    /// Enforces uniqueness - only one LTC1 per hash
-    public fun mark_hash_used(
+    /// Claim a hash to start usage flow
+    /// Returns a hot potato that must be consumed by bind_executor
+    public fun claim_hash(
         registry: &mut NPLEXRegistry,
-        document_hash: vector<u8>,
-        ltc1_id: ID
-    ) {
+        document_hash: vector<u8>
+    ): HashClaim {
         // Verify hash is approved
         assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
         
-        let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
         
         // Verify not revoked
         assert!(!hash_info.is_revoked, E_HASH_REVOKED);
@@ -128,8 +165,31 @@ module nplex::registry {
         // Verify not already used
         assert!(option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
         
+        HashClaim { document_hash }
+    }
+
+    /// Finalize hash usage by binding it to an LTC1 contract ID
+    /// Consumes the hot potato
+    /// Requires a witness from an allowed executor module
+    public fun bind_executor<T: drop>(
+        registry: &mut NPLEXRegistry,
+        claim: HashClaim,
+        new_contract_id: ID,
+        _witness: T
+    ) {
+        // Verify witness type is allowed
+        let witness_type = type_name::get<T>();
+        assert!(table::contains(&registry.allowed_executors, witness_type), E_UNAUTHORIZED_EXECUTOR);
+
+        let HashClaim { document_hash } = claim;
+        
+        let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+        
+        // Double check
+        assert!(std::option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+        
         // Mark as used
-        hash_info.contract_id = option::some(ltc1_id);
+        std::option::fill(&mut hash_info.contract_id, new_contract_id);
     }
 
     // ==================== Idempotent Functions ====================
