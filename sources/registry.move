@@ -193,29 +193,4 @@ module nplex::registry {
     public fun init_for_testing(ctx: &mut TxContext) {
         init(ctx);
     }
-
-    #[test_only]
-    public fun is_valid_hash_for_testing(registry: &NPLEXRegistry, document_hash: &vector<u8>): bool {
-        is_valid_hash(registry, document_hash)
-    }
-
-    #[test_only]
-    public fun is_hash_used_for_testing(registry: &NPLEXRegistry, document_hash: &vector<u8>): bool {
-        is_hash_used(registry, document_hash)
-    }
-
-    #[test_only]
-    public fun mark_hash_used_for_testing(registry: &mut NPLEXRegistry, document_hash: vector<u8>, ltc1_id: ID) {
-        mark_hash_used(registry, document_hash, ltc1_id)
-    }
-
-    #[test_only]
-    public fun is_hash_revoked_for_testing(registry: &NPLEXRegistry, document_hash: &vector<u8>): bool {
-        is_hash_revoked(registry, document_hash)
-    }
-
-    #[test_only]
-    public fun get_hash_info_for_testing(registry: &NPLEXRegistry, document_hash: &vector<u8>): (u64, address, bool, option::Option<ID>) {
-        get_hash_info(registry, document_hash)
-    }
 }
