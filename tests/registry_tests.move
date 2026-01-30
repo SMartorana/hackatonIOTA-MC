@@ -14,11 +14,11 @@ module nplex::registry_tests {
     #[allow(unused_const)]
     const ALICE: address = @0xA;
     #[allow(unused_const)]
-    const Verified_hash: vector<u8> = b"test_hash_1";
+    const Verified_hash: u256 = 1;
     #[allow(unused_const)]
-    const Unverified_hash: vector<u8> = b"test_hash_2";
+    const Unverified_hash: u256 = 2;
     #[allow(unused_const)]  
-    const Revoked_hash: vector<u8> = b"test_hash_3";
+    const Revoked_hash: u256 = 3;
     #[allow(unused_const)]
     const BOB: address = @0xB;
 
@@ -85,7 +85,7 @@ module nplex::registry_tests {
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            assert!(registry::is_valid_hash(&registry, &Verified_hash), 0);
+            assert!(registry::is_valid_hash(&registry, Verified_hash), 0);
             test_scenario::return_shared(registry);
         };
         
@@ -141,7 +141,7 @@ module nplex::registry_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             // Should be invalid
-            assert!(!registry::is_valid_hash(&registry, &Unverified_hash), 0);
+            assert!(!registry::is_valid_hash(&registry, Unverified_hash), 0);
             
             test_scenario::return_shared(registry);
         };
@@ -160,7 +160,7 @@ module nplex::registry_tests {
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            assert!(!registry::is_valid_hash(&registry, &Revoked_hash), 1);
+            assert!(!registry::is_valid_hash(&registry, Revoked_hash), 1);
             test_scenario::return_shared(registry);
         };
         
@@ -185,7 +185,7 @@ module nplex::registry_tests {
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            let document_hash = b"alice_unauthorized_hash";
+            let document_hash: u256 = 4;
             
             registry::register_hash(&mut registry, &admin_cap, document_hash, test_scenario::ctx(&mut scenario));
             

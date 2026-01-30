@@ -27,7 +27,7 @@ module nplex::registry {
 
     /// Hot potato struct to ensure hash usage flow
     public struct HashClaim {
-        document_hash: vector<u8>
+        document_hash: u256
     }
 
     /// Admin capability - only NPLEX holds this
@@ -41,9 +41,9 @@ module nplex::registry {
     public struct NPLEXRegistry has key {
         id: UID,
         /// Maps document hash -> package information
-        approved_hashes: Table<vector<u8>, HashInfo>,
+        approved_hashes: Table<u256, HashInfo>,
         /// Maps TypeName (of the executor witness) -> is_allowed
-        allowed_executors: Table<TypeName, bool>,
+        allowed_executors: vector<TypeName>,
     }
 
     /// Information about an approved hash
@@ -73,7 +73,7 @@ module nplex::registry {
         let registry = NPLEXRegistry {
             id: object::new(ctx),
             approved_hashes: table::new(ctx),
-            allowed_executors: table::new(ctx),
+            allowed_executors: vector::empty(),
         };
         transfer::share_object(registry);
     }
@@ -85,7 +85,7 @@ module nplex::registry {
     public entry fun register_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
-        document_hash: vector<u8>,
+        document_hash: u256,
         ctx: &TxContext
     ) {
         assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
@@ -104,7 +104,7 @@ module nplex::registry {
     public entry fun revoke_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
-        document_hash: vector<u8>
+        document_hash: u256
     ) {
         assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
         let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
@@ -115,7 +115,7 @@ module nplex::registry {
     public entry fun unrevoke_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
-        document_hash: vector<u8>
+        document_hash: u256
     ) {
         assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
         let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
@@ -129,8 +129,8 @@ module nplex::registry {
         _admin_cap: &NPLEXAdminCap,
     ) {
         let type_name = type_name::get<T>();
-        if (!table::contains(&registry.allowed_executors, type_name)) {
-            table::add(&mut registry.allowed_executors, type_name, true);
+        if (!vector::contains(&registry.allowed_executors, &type_name)) {
+            vector::push_back(&mut registry.allowed_executors, type_name);
         };
     }
 
@@ -141,8 +141,9 @@ module nplex::registry {
         _admin_cap: &NPLEXAdminCap,
     ) {
         let type_name = type_name::get<T>();
-        if (table::contains(&registry.allowed_executors, type_name)) {
-            table::remove(&mut registry.allowed_executors, type_name);
+        let (found, index) = vector::index_of(&registry.allowed_executors, &type_name);
+        if (found) {
+            vector::remove(&mut registry.allowed_executors, index);
         };
     }
 
@@ -152,7 +153,7 @@ module nplex::registry {
     /// Returns a hot potato that must be consumed by bind_executor
     public fun claim_hash(
         registry: &mut NPLEXRegistry,
-        document_hash: vector<u8>
+        document_hash: u256
     ): HashClaim {
         // Verify hash is approved
         assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
@@ -179,7 +180,7 @@ module nplex::registry {
     ) {
         // Verify witness type is allowed
         let witness_type = type_name::get<T>();
-        assert!(table::contains(&registry.allowed_executors, witness_type), E_UNAUTHORIZED_EXECUTOR);
+        assert!(vector::contains(&registry.allowed_executors, &witness_type), E_UNAUTHORIZED_EXECUTOR);
 
         let HashClaim { document_hash } = claim;
         
@@ -198,48 +199,48 @@ module nplex::registry {
     /// Returns true if hash can be used to create LTC1
     public fun is_valid_hash(
         registry: &NPLEXRegistry,
-        document_hash: &vector<u8>
+        document_hash: u256
     ): bool {
-        if (!table::contains(&registry.approved_hashes, *document_hash)) {
+        if (!table::contains(&registry.approved_hashes, document_hash)) {
             return false
         };
         
-        let hash_info = table::borrow(&registry.approved_hashes, *document_hash);
+        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
         !hash_info.is_revoked
     }
 
     /// Check if a hash has already been used to create an LTC1 contract
     public fun is_hash_used(
         registry: &NPLEXRegistry,
-        document_hash: &vector<u8>
+        document_hash: u256
     ): bool {
-        if (!table::contains(&registry.approved_hashes, *document_hash)) {
+        if (!table::contains(&registry.approved_hashes, document_hash)) {
             return false
         };
         
-        let hash_info = table::borrow(&registry.approved_hashes, *document_hash);
+        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
         option::is_some(&hash_info.contract_id)
     }
 
     /// Check if a hash is revoked, just to check if an hash existed but was revoked (Could be useless)
     public fun is_hash_revoked(
         registry: &NPLEXRegistry,
-        document_hash: &vector<u8>
+        document_hash: u256
     ): bool {
-        if (!table::contains(&registry.approved_hashes, *document_hash)) {
+        if (!table::contains(&registry.approved_hashes, document_hash)) {
             return false
         };
         
-        let hash_info = table::borrow(&registry.approved_hashes, *document_hash);
+        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
         hash_info.is_revoked
     }
 
     /// Get hash info (for UI/debugging)
     public fun get_hash_info(
         registry: &NPLEXRegistry,
-        document_hash: &vector<u8>
+        document_hash: u256
     ): (u64, address, bool, option::Option<ID>) {
-        let hash_info = table::borrow(&registry.approved_hashes, *document_hash);
+        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
         (
             hash_info.approved_timestamp,
             hash_info.auditor,

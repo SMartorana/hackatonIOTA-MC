@@ -12,7 +12,7 @@ module nplex::ltc1 {
     /// The LTC1 Contract Object
     public struct LTC1Contract has key, store {
         id: iota::object::UID,
-        document_hash: vector<u8>,
+        document_hash: u256,
         buyer: address,
         seller: address,
     }
@@ -27,7 +27,7 @@ module nplex::ltc1 {
 
     public entry fun create_contract(
         registry: &mut NPLEXRegistry,
-        document_hash: vector<u8>,
+        document_hash: u256,
         buyer: address,
         seller: address,
         ctx: &mut iota::tx_context::TxContext
