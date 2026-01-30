@@ -1,0 +1,6 @@
+[package]
+name = "nplex"
+edition = "2024"
+
+[addresses]
+nplex = "0x0"
