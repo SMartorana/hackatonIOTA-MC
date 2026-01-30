@@ -247,4 +247,49 @@ module nplex::registry_tests {
         
         test_scenario::end(scenario);
     }
+    
+    #[test]
+    #[expected_failure(abort_code = registry::E_HASH_NOT_APPROVED)]
+    fun test_ltc1_cannot_use_unapproved_hash() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        // Try to use unverified hash
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let id = object::id_from_address(@0x103);
+            
+            // This should abort with E_HASH_NOT_APPROVED
+            registry::mark_hash_used(&mut registry, Unverified_hash, id);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+    #[test]
+    #[expected_failure(abort_code = registry::E_HASH_REVOKED)]
+    fun test_ltc1_cannot_use_revoked_hash() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        // Try to use revoked hash
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let id = object::id_from_address(@0x104);
+            
+            // This should abort with E_HASH_REVOKED
+            registry::mark_hash_used(&mut registry, Revoked_hash, id);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
 }
