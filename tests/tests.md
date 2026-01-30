@@ -1,10 +1,12 @@
 Registry tests:
 - test_register_and_validate_hash
+- test_register_same_hash_twice
 - test_unregistered_hash_is_invalid
 - test_revoked_hash_is_invalid
 - test_non_admin_cannot_register_hash
 - test_non_admin_cannot_revoke_hash
 - test_non_admin_cannot_unrevoke_hash
-- test_ltc1_cannot_use_same_hash_twice
+- test_same_ltc1_cannot_use_same_hash_twice
+- test_different_ltc1_cannot_use_same_hash_twice
 - test_ltc1_cannot_use_unapproved_hash
 - test_ltc1_cannot_use_revoked_hash

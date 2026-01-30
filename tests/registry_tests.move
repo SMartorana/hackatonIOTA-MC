@@ -85,6 +85,42 @@ module nplex::registry_tests {
     }
 
     #[test]
+    #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
+    fun test_register_same_hash_twice() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        // Register hash first time (Success)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, test_scenario::ctx(&mut scenario));
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+        
+        // Register same hash second time (Fail)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            // This should abort with E_HASH_ALREADY_USED
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, test_scenario::ctx(&mut scenario));
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
     fun test_unregistered_hash_is_invalid() {
         let mut scenario = test_scenario::begin(ADMIN);
         
@@ -214,7 +250,43 @@ module nplex::registry_tests {
 
     #[test]
     #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
-    fun test_ltc1_cannot_use_same_hash_twice() {
+    fun test_same_ltc1_cannot_use_same_hash_twice() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        // mark_hash_used first time (Success)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            // In unit tests, we can generate IDs from addresses
+            let id1 = object::id_from_address(@0x101);
+            
+            registry::mark_hash_used(&mut registry, Verified_hash, id1);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        // mark_hash_used second time (Fail)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            
+            let id2 = object::id_from_address(@0x101);
+            
+            // This should abort with E_HASH_ALREADY_USED
+            registry::mark_hash_used(&mut registry, Verified_hash, id2);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
+    fun test_different_ltc1_cannot_use_same_hash_twice() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
@@ -247,7 +319,7 @@ module nplex::registry_tests {
         
         test_scenario::end(scenario);
     }
-    
+
     #[test]
     #[expected_failure(abort_code = registry::E_HASH_NOT_APPROVED)]
     fun test_ltc1_cannot_use_unapproved_hash() {

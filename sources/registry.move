@@ -69,13 +69,14 @@ module nplex::registry {
     // ==================== Admin Functions ====================
 
     /// Register a new approved hash in the registry
-    /// Only callable by NPLEX admin
+    /// Invarant: only callable by NPLEX admin and hash must have not been registered before
     public entry fun register_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
         document_hash: vector<u8>,
         ctx: &TxContext
     ) {
+        assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
         let hash_info = HashInfo {
             approved_timestamp: tx_context::epoch(ctx),
             auditor: tx_context::sender(ctx),
