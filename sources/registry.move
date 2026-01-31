@@ -24,6 +24,8 @@ module nplex::registry {
     const E_UNAUTHORIZED_EXECUTOR: u64 = 4;
 
     // ==================== Structs ====================
+    /// One-Time Witness for the module
+    public struct REGISTRY has drop {}
 
     /// Hot potato struct to ensure hash usage flow
     public struct HashClaim {
@@ -62,7 +64,9 @@ module nplex::registry {
 
     /// Module initializer - called once when contract is published
     /// Creates the registry and gives admin capability to publisher
-    fun init(ctx: &mut TxContext) {
+    fun init(otw: nplex::registry::REGISTRY, ctx: &mut TxContext) {
+        let _ = otw; // Currently ignored, but keeps the door open for Publisher claim
+        
         // Create admin capability and send to deployer
         let admin_cap = NPLEXAdminCap {
             id: object::new(ctx),
@@ -256,6 +260,6 @@ module nplex::registry {
 
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) {
-        init(ctx);
+        init(REGISTRY {}, ctx);
     }
 }
