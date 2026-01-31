@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Federico Abrignani. All rights reserved.
+/// NPLEX LTC1 - Manages the creation of LTC1 contracts
+/// 
+/// This contract provides the logic for the LTC1 contract.
+
 module nplex::ltc1 {
     use nplex::registry::{Self, NPLEXRegistry};
 

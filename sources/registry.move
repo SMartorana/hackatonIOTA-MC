@@ -42,7 +42,7 @@ module nplex::registry {
         id: UID,
         /// Maps document hash -> package information
         approved_hashes: Table<u256, HashInfo>,
-        /// Maps TypeName (of the executor witness) -> is_allowed
+        /// Maps TypeName (of the executor witness) -> is_allowed, could probably be replaced with friend for the purpose of the mvp or the iota equivalent of public(package)
         allowed_executors: vector<TypeName>,
     }
 
