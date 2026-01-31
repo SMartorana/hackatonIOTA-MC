@@ -153,6 +153,7 @@ module nplex::registry {
 
     /// Claim a hash to start usage flow
     /// Returns a hot potato that must be consumed by bind_executor
+    /// Invariant: hash must have been registered before and not revoked and not used yet by another ltc1 contract
     public fun claim_hash(
         registry: &mut NPLEXRegistry,
         document_hash: u256
@@ -173,7 +174,7 @@ module nplex::registry {
 
     /// Finalize hash usage by binding it to an LTC1 contract ID
     /// Consumes the hot potato
-    /// Requires a witness from an allowed executor module
+    /// Invariant: witness type must be allowed and hash must have been claimed before through claim_hash and not used yet by another ltc1 contract
     public fun bind_executor<T: drop>(
         registry: &mut NPLEXRegistry,
         claim: HashClaim,
@@ -192,7 +193,7 @@ module nplex::registry {
         assert!(std::option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
         
         // Mark as used
-        std::option::fill(&mut hash_info.contract_id, new_contract_id);
+        std::option::fill(&mut hash_info.contract_id, new_contract_id); // fill will abort if contract_id is already Some
     }
 
     // ==================== Idempotent Functions ====================
