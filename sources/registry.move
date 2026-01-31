@@ -101,6 +101,7 @@ module nplex::registry {
 
     /// Revoke a previously approved hash (emergency use)
     /// This prevents new operations on LTC1 contracts with this hash
+    /// Invariant: only callable by NPLEX admin and hash must have been registered before
     public entry fun revoke_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
@@ -112,6 +113,7 @@ module nplex::registry {
     }
 
     /// Un-revoke a hash (if revocation was in error)
+    /// Invariant: only callable by NPLEX admin and hash must have been registered before
     public entry fun unrevoke_hash(
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
@@ -143,7 +145,7 @@ module nplex::registry {
         let type_name = type_name::get<T>();
         let (found, index) = vector::index_of(&registry.allowed_executors, &type_name);
         if (found) {
-            vector::remove(&mut registry.allowed_executors, index);
+            vector::swap_remove(&mut registry.allowed_executors, index); // swap_remove is O(1) while remove is O(n)
         };
     }
 
