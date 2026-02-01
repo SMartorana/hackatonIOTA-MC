@@ -41,7 +41,7 @@ Each LTC1 contract represents **one NPL package** and issues two types of assets
 - **Properties:** Transferable (`store`), Tradeable.
 - **Acquisition:** Bought by investors funds to finance the package.
 
-#### 2. Servicer Bond (For Owner/Servicer)
+#### 2. Owner Bond (For Owner)
 - **Role:** Represents **legal ownership** of the NPL package & "Skin in the Game".
 - **Properties:** **LOCKED** (NO `store`), Non-transferable without NPLEX approval.
 - **Acquisition:** Minted to whoever creates the LTC1 (must prove NPL ownership to NPLEX). Can be transferred with NPLEX approval.
@@ -51,7 +51,7 @@ Each LTC1 contract represents **one NPL package** and issues two types of assets
 Each package contains:
 - **Document Hash**: SHA-256 of ZIP file (immutable, the actual hash of the NPL package documents)
 - **Token Supply**: Fixed supply minted at creation (non-burnable)
-- **ServicerBond**: Represents ownership — whoever holds it has executive power over the package
+- **OwnerBond**: Represents ownership — whoever holds it has executive power over the package
 - **Revenue Pool**: IOTA deposited by the Bond holder when debts are recovered
 - **Metadata**: Nominal value, creation date, etc.
 
@@ -143,8 +143,8 @@ struct LTC1Package has key {
 | `withdraw_funding()` | Bond holder withdraws funding pool (requires ServicerBond) |
 | `deposit_revenue()` | Bond holder deposits recovered funds (requires ServicerBond) |
 | `claim_revenue_investor()` | Token holders claim proportional revenue |
-| `claim_revenue_servicer()` | Servicer claims revenue via locked Bond |
-| `transfer_servicer_bond()` | Restricted transfer (requires NPLEX approval) |
+| `claim_revenue_owner()` | Owner claims revenue via locked Bond |
+| `transfer_owner_bond()` | Restricted transfer (requires NPLEX approval) |
 | `verify_document()` | Verify document hash matches |
 | `get_package_info()` | View package metadata |
 
@@ -312,4 +312,12 @@ If the Bond holder never recovers any debts:
 
 - **No jurisdiction/country fields** - compliance deferred to post-MVP
 - Focus: Technical proof-of-concept for tokenization
+
+## Future Implementations
+
+### Granular Revocation Control
+Currently, revocation is a binary state. Future versions will support granular permissions:
+- **Block Deposits Only**: Stop new investments/deposits but allow withdrawals.
+- **Block Trading**: Stop token transfers while allowing claims.
+- **Full Freeze**: Stop all operations for investigation.
 
