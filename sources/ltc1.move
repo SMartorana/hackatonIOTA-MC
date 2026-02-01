@@ -18,8 +18,8 @@ module nplex::ltc1 {
     const E_INVALID_SPLIT: u64 = 1005;
     const E_INVALID_TOKEN: u64 = 1006;
 
-    /// Max investor share in BPS (50%)
-    const MAX_INVESTOR_BPS: u64 = 5000;
+    /// Max investor share in BPS (95%)
+    const MAX_INVESTOR_BPS: u64 = 9500;
 
     // ==================== Structs ====================
 
@@ -168,7 +168,7 @@ module nplex::ltc1 {
         assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
 
         // 1. Check supply
-        assert!(package.tokens_sold + amount <= package.max_sellable_supply, E_INSUFFICIENT_SUPPLY);
+        assert!(amount <= package.max_sellable_supply - package.tokens_sold, E_INSUFFICIENT_SUPPLY);
 
         // 2. Calculate cost
         let cost = amount * package.token_price;
