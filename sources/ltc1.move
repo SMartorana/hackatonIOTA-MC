@@ -271,6 +271,25 @@ module nplex::ltc1 {
         iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
     }
 
+    /// Transfer Owner Bond to a new owner
+    /// Requires prior authorization from NPLEX via Registry
+    public entry fun transfer_bond(
+        registry: &mut NPLEXRegistry,
+        bond: OwnerBond,
+        new_owner: address,
+        _ctx: &mut iota::tx_context::TxContext
+    ) {
+        // 1. Validate and Consume Ticket from Registry
+        // This will abort if:
+        // - LTC1 is not an allowed executor (Unlikely if code is published)
+        // - Transfer is not authorized
+        // - New owner does not match
+        registry::consume_transfer_ticket(registry, bond.package_id, new_owner, LTC1Witness {});
+
+        // 2. Transfer Bond
+        iota::transfer::transfer(bond, new_owner);
+    }
+
     /// Claim Revenue for Investors
     /// Investors can claim their share of the revenue based on their token balance.
     /// Allowed even if the contract is revoked (so investors can exit).
@@ -302,5 +321,15 @@ module nplex::ltc1 {
         // 5. Payout
         let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
         iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+    }
+
+    // ==================== Accessors ====================
+
+    public fun balance(token: &LTC1Token): u64 {
+        token.balance
+    }
+
+    public fun claimed_revenue(token: &LTC1Token): u64 {
+        token.claimed_revenue
     }
 }

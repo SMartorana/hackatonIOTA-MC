@@ -23,6 +23,9 @@ module nplex::registry {
     /// Executor module is not authorized to bind hashes
     const E_UNAUTHORIZED_EXECUTOR: u64 = 4;
 
+    /// Bond transfer not authorized by NPLEX
+    const E_TRANSFER_NOT_AUTHORIZED: u64 = 5;
+
     // ==================== Structs ====================
     /// One-Time Witness for the module
     public struct REGISTRY has drop {}
@@ -44,6 +47,8 @@ module nplex::registry {
         id: UID,
         /// Maps document hash -> package information
         approved_hashes: Table<u256, HashInfo>,
+        /// Maps Contract ID -> Authorized New Owner Address
+        authorized_transfers: Table<ID, address>,
         /// Maps TypeName (of the executor witness) -> is_allowed, could probably be replaced with friend for the purpose of the mvp or the iota equivalent of public(package)
         allowed_executors: vector<TypeName>,
     }
@@ -77,6 +82,7 @@ module nplex::registry {
         let registry = NPLEXRegistry {
             id: object::new(ctx),
             approved_hashes: table::new(ctx),
+            authorized_transfers: table::new(ctx),
             allowed_executors: vector::empty(),
         };
         transfer::share_object(registry);
@@ -153,6 +159,20 @@ module nplex::registry {
         };
     }
 
+    /// Authorize a Bond Transfer for a specific contract
+    /// Invariant: only callable by NPLEX admin
+    public entry fun authorize_transfer(
+        registry: &mut NPLEXRegistry,
+        _admin_cap: &NPLEXAdminCap,
+        contract_id: ID,
+        new_owner: address
+    ) {
+        if (table::contains(&registry.authorized_transfers, contract_id)) {
+            table::remove(&mut registry.authorized_transfers, contract_id);
+        };
+        table::add(&mut registry.authorized_transfers, contract_id, new_owner);
+    }
+
     // ==================== Validation Functions ====================
 
     /// Claim a hash to start usage flow
@@ -198,6 +218,29 @@ module nplex::registry {
         
         // Mark as used
         std::option::fill(&mut hash_info.contract_id, new_contract_id); // fill will abort if contract_id is already Some
+    }
+
+    /// Consume a transfer ticket to allow Bond transfer
+    /// Validates that the Caller (via Witness) is authorized and the Transfer is approved by NPLEX
+    public fun consume_transfer_ticket<T: drop>(
+        registry: &mut NPLEXRegistry,
+        contract_id: ID,
+        new_owner: address,
+        _witness: T
+    ) {
+        // 1. Verify Witness (Caller) is an allowed executor
+        let witness_type = type_name::get<T>();
+        assert!(vector::contains(&registry.allowed_executors, &witness_type), E_UNAUTHORIZED_EXECUTOR);
+
+        // 2. Verify Transfer is Authorized
+        assert!(table::contains(&registry.authorized_transfers, contract_id), E_TRANSFER_NOT_AUTHORIZED);
+        
+        // 3. Verify Recipient matches
+        let authorized_recipient = *table::borrow(&registry.authorized_transfers, contract_id);
+        assert!(authorized_recipient == new_owner, E_TRANSFER_NOT_AUTHORIZED);
+
+        // 4. Consume Ticket
+        table::remove(&mut registry.authorized_transfers, contract_id);
     }
 
     // ==================== Idempotent Functions ====================
