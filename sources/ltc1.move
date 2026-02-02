@@ -7,7 +7,9 @@ module nplex::ltc1 {
     use nplex::registry::{Self, NPLEXRegistry};
     use iota::balance::{Self, Balance};
     use iota::coin::{Coin};
-    use std::string::String;
+    use std::string::{Self, String};
+    use iota::display;
+    use iota::package;
 
     // ==================== Errors ====================
     const E_INSUFFICIENT_SUPPLY: u64 = 1001;
@@ -84,8 +86,55 @@ module nplex::ltc1 {
 
     // ==================== Initialization ====================
 
-    fun init(otw: LTC1, _ctx: &mut iota::tx_context::TxContext) {
-        let _ = otw;
+    #[allow(lint(share_owned))]
+    fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
+        // 1. Claim Publisher
+        let publisher = package::claim(otw, ctx);
+
+        // 2. Define Display for OwnerBond
+        let bond_keys = vector[
+            string::utf8(b"name"),
+            string::utf8(b"description"),
+            string::utf8(b"image_url"),
+            string::utf8(b"project_url"),
+        ];
+
+        let bond_values = vector[
+            string::utf8(b"NPLEX Owner Bond"),
+            string::utf8(b"Administrative key for LTC1 Package {package_id}"),
+            string::utf8(b"https://api.nplex.eu/icons/bond_gold.png"),
+            string::utf8(b"https://nplex.eu"),
+        ];
+
+        let mut bond_display = display::new_with_fields<OwnerBond>(
+            &publisher, bond_keys, bond_values, ctx
+        );
+        display::update_version(&mut bond_display);
+
+        // 3. Define Display for LTC1Token
+        let token_keys = vector[
+            string::utf8(b"name"),
+            string::utf8(b"description"),
+            string::utf8(b"image_url"),
+            string::utf8(b"project_url"),
+        ];
+
+        let token_values = vector[
+            string::utf8(b"NPLEX Investor Token"),
+            string::utf8(b"Investor share for LTC1 Package {package_id}"),
+            string::utf8(b"https://api.nplex.eu/icons/token_blue.png"),
+            string::utf8(b"https://nplex.eu"),
+        ];
+
+        let mut token_display = display::new_with_fields<LTC1Token>(
+            &publisher, token_keys, token_values, ctx
+        );
+        display::update_version(&mut token_display);
+
+        // 4. Cleanup & Transfer
+        iota::transfer::public_transfer(publisher, iota::tx_context::sender(ctx));
+        iota::transfer::public_share_object(bond_display);
+        iota::transfer::public_share_object(token_display);
     }
 
     // ==================== Public Functions ====================

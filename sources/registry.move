@@ -8,6 +8,9 @@
 module nplex::registry {
     use iota::table::{Self, Table};
     use std::type_name::{Self, TypeName};
+    use std::string;
+    use iota::display;
+    use iota::package;
 
     // ==================== Error Codes ====================
 
@@ -71,16 +74,38 @@ module nplex::registry {
 
     /// Module initializer - called once when contract is published
     /// Creates the registry and gives admin capability to publisher
+    #[allow(lint(share_owned))]
     fun init(otw: nplex::registry::REGISTRY, ctx: &mut TxContext) {
-        let _ = otw; // Currently ignored, but keeps the door open for Publisher claim
-        
-        // Create admin capability and send to deployer
+        // 1. Claim Publisher
+        let publisher = package::claim(otw, ctx);
+
+        // 2. Define Display for NPLEXAdminCap
+        let admin_keys = vector[
+            string::utf8(b"name"),
+            string::utf8(b"description"),
+            string::utf8(b"image_url"),
+            string::utf8(b"project_url"),
+        ];
+
+        let admin_values = vector[
+            string::utf8(b"NPLEX Administrator Capability"),
+            string::utf8(b"Grants administrative control over the NPLEX Registry."),
+            string::utf8(b"https://api.nplex.eu/icons/admin_crown.png"),
+            string::utf8(b"https://nplex.eu"),
+        ];
+
+        let mut admin_display = display::new_with_fields<NPLEXAdminCap>(
+            &publisher, admin_keys, admin_values, ctx
+        );
+        display::update_version(&mut admin_display);
+
+        // 3. Create admin capability and send to deployer
         let admin_cap = NPLEXAdminCap {
             id: object::new(ctx),
         };
         transfer::transfer(admin_cap, tx_context::sender(ctx));
 
-        // Create shared registry
+        // 4. Create shared registry
         let registry = NPLEXRegistry {
             id: object::new(ctx),
             approved_hashes: table::new(ctx),
@@ -89,6 +114,10 @@ module nplex::registry {
             allowed_executors: vector::empty(),
         };
         transfer::share_object(registry);
+
+        // 5. Cleanup
+        transfer::public_transfer(publisher, tx_context::sender(ctx));
+        transfer::public_share_object(admin_display);
     }
 
     // ==================== Admin Functions ====================
