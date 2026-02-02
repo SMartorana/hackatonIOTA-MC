@@ -7,7 +7,6 @@ module nplex::ltc1 {
     use nplex::registry::{Self, NPLEXRegistry};
     use iota::balance::{Self, Balance};
     use iota::coin::{Coin};
-    use iota::iota::IOTA;
     use std::string::String;
 
     // ==================== Errors ====================
@@ -56,7 +55,7 @@ module nplex::ltc1 {
 
     /// The LTC1 Package (Shared Object)
     /// Contains the state, pools, and metadata visible to everyone.
-    public struct LTC1Package has key {
+    public struct LTC1Package<phantom T> has key {
         id: iota::object::UID,
         document_hash: u256,
         
@@ -66,11 +65,13 @@ module nplex::ltc1 {
         max_sellable_supply: u64,
         tokens_sold: u64,
         token_price: u64,// in MIST 1,000,000,000 = 1 iota
+
+        // this is metadata, the value the originator of the security gave to this asset at creation
         nominal_value: u64,// in MIST 1,000,000,000 = 1 iota
         
         // Pools
-        funding_pool: Balance<IOTA>,
-        revenue_pool: Balance<IOTA>,
+        funding_pool: Balance<T>,
+        revenue_pool: Balance<T>,
         total_revenue_deposited: u64,
         /// Revenue earned by unsold tokens (belongs to owner)
         owner_legacy_revenue: u64,
@@ -89,7 +90,7 @@ module nplex::ltc1 {
 
     // ==================== Public Functions ====================
 
-    public entry fun create_contract(
+    public entry fun create_contract<T>(
         registry: &mut NPLEXRegistry,
         document_hash: u256,
         total_supply: u64,
@@ -121,7 +122,7 @@ module nplex::ltc1 {
         let max_sellable_supply = (total_supply * investor_split_bps) / 10000;
 
         // 4. Create the Package (Shared Object)
-        let package = LTC1Package {
+        let package = LTC1Package<T> {
             id: package_uid,
             document_hash,
             total_supply,
@@ -129,8 +130,8 @@ module nplex::ltc1 {
             tokens_sold: 0,
             token_price,
             nominal_value,
-            funding_pool: balance::zero(),
-            revenue_pool: balance::zero(),
+            funding_pool: balance::zero<T>(),
+            revenue_pool: balance::zero<T>(),
             total_revenue_deposited: 0,
             owner_legacy_revenue: 0,
             owner_bond_id: bond_id,
@@ -164,10 +165,10 @@ module nplex::ltc1 {
     /// Buy tokens from the package
     /// User specifies how many "shares" they want to buy (`amount`)
     /// and provides the Payment in IOTA.
-    public entry fun buy_token(
+    public entry fun buy_token<T>(
         registry: &NPLEXRegistry,
-        package: &mut LTC1Package,
-        mut payment: Coin<IOTA>,
+        package: &mut LTC1Package<T>,
+        mut payment: Coin<T>,
         amount: u64,
         ctx: &mut iota::tx_context::TxContext
     ) {
@@ -219,11 +220,11 @@ module nplex::ltc1 {
 
     /// Deposit revenue into the package (Owner Only)
     /// Requires the OwnerBond (Admin Capability)
-    public entry fun deposit_revenue(
+    public entry fun deposit_revenue<T>(
         registry: &NPLEXRegistry,
-        package: &mut LTC1Package,
+        package: &mut LTC1Package<T>,
         bond: &OwnerBond,
-        payment: Coin<IOTA>,
+        payment: Coin<T>,
         _ctx: &mut iota::tx_context::TxContext
     ) {
         // 0. Verify Contract Status (not revoked)
@@ -244,9 +245,9 @@ module nplex::ltc1 {
     /// Owner is entitled to:
     /// 1. The revenue share of the currently UNSOLD tokens.
     /// 2. The "Legacy Revenue" accumulated from tokens they owned in the past but then sold.
-    public entry fun claim_revenue_owner(
+    public entry fun claim_revenue_owner<T>(
         registry: &NPLEXRegistry,
-        package: &mut LTC1Package,
+        package: &mut LTC1Package<T>,
         bond: &mut OwnerBond,
         ctx: &mut iota::tx_context::TxContext
     ) {
@@ -300,9 +301,9 @@ module nplex::ltc1 {
     /// Claim Revenue for Investors
     /// Investors can claim their share of the revenue based on their token balance.
     /// Allowed even if the contract is revoked (so investors can exit).
-    public entry fun claim_revenue(
+    public entry fun claim_revenue<T>(
         registry: &NPLEXRegistry,
-        package: &mut LTC1Package,
+        package: &mut LTC1Package<T>,
         token: &mut LTC1Token,
         ctx: &mut iota::tx_context::TxContext
     ) {

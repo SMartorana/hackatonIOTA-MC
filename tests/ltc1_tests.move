@@ -58,7 +58,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            ltc1::create_contract(
+            ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
@@ -90,10 +90,10 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
 
-            ltc1::buy_token(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -103,7 +103,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
             assert!(ltc1::balance(&token) == 100_000, 0);
@@ -121,11 +121,11 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount, &mut scenario);
 
-            ltc1::deposit_revenue(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -137,10 +137,10 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue(&registry, &mut package, &mut token, ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
 
             // Verify payout (not easily checkable in simple test without inspecting events or balances, 
             // but if it didn't abort, it worked. We assume math coverage in logic).
@@ -158,10 +158,10 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
          {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
 
-            ltc1::claim_revenue_owner(&registry, &mut package, &mut bond, ctx(&mut scenario));
+            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &mut bond, ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -181,7 +181,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            ltc1::create_contract(
+            ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
@@ -213,11 +213,11 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
 
             // This should fail
-            ltc1::buy_token(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -252,7 +252,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            ltc1::create_contract(
+            ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
@@ -295,7 +295,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            ltc1::create_contract(
+            ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
@@ -319,7 +319,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            ltc1::create_contract(
+            ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
