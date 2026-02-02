@@ -49,12 +49,14 @@ module nplex::registry {
         approved_hashes: Table<u256, HashInfo>,
         /// Maps Contract ID -> Authorized New Owner Address
         authorized_transfers: Table<ID, address>,
+        /// List of registered hash keys (Iteratable index for Frontend)
+        registered_hash_keys: vector<u256>,
         /// Maps TypeName (of the executor witness) -> is_allowed, could probably be replaced with friend for the purpose of the mvp or the iota equivalent of public(package)
         allowed_executors: vector<TypeName>,
     }
 
     /// Information about an approved hash
-    public struct HashInfo has store {
+    public struct HashInfo has store, copy, drop {
         /// When this hash was approved
         approved_timestamp: u64,
         /// Address that approved this hash (NPLEX auditor)
@@ -83,6 +85,7 @@ module nplex::registry {
             id: object::new(ctx),
             approved_hashes: table::new(ctx),
             authorized_transfers: table::new(ctx),
+            registered_hash_keys: vector::empty(),
             allowed_executors: vector::empty(),
         };
         transfer::share_object(registry);
@@ -99,6 +102,7 @@ module nplex::registry {
         ctx: &TxContext
     ) {
         assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
+        
         let hash_info = HashInfo {
             approved_timestamp: tx_context::epoch(ctx),
             auditor: tx_context::sender(ctx),
@@ -107,6 +111,7 @@ module nplex::registry {
         };
         
         table::add(&mut registry.approved_hashes, document_hash, hash_info);
+        vector::push_back(&mut registry.registered_hash_keys, document_hash);
     }
 
     /// Revoke a previously approved hash (emergency use)
@@ -289,14 +294,44 @@ module nplex::registry {
     public fun get_hash_info(
         registry: &NPLEXRegistry,
         document_hash: u256
-    ): (u64, address, bool, option::Option<ID>) {
-        let hash_info = table::borrow(&registry.approved_hashes, document_hash);
-        (
-            hash_info.approved_timestamp,
-            hash_info.auditor,
-            hash_info.is_revoked,
-            hash_info.contract_id
-        )
+    ): HashInfo {
+        *table::borrow(&registry.approved_hashes, document_hash)
+        //we could unpack the struct and return the values but I think this is better for security, you have to explicitly write (a getter) what you want to be accessible
+    }
+
+    /// Accessor for HashInfo.contract_id
+    public fun hash_contract_id(info: &HashInfo): Option<ID> {
+        info.contract_id
+    }
+
+    /// Accessor for HashInfo.is_revoked
+    public fun hash_is_revoked(info: &HashInfo): bool {
+        info.is_revoked
+    }
+
+    /// Accessor for HashInfo.auditor
+    public fun hash_auditor(info: &HashInfo): address {
+        info.auditor
+    }
+
+    /// Accessor for HashInfo.approved_timestamp
+    public fun hash_approved_timestamp(info: &HashInfo): u64 {
+        info.approved_timestamp
+    }
+
+    /// Get ALL registered hash info (View Function UI/debugging)
+    /// Iterates through the stored keys and returns the full list of info structs
+    public fun get_all_hashes_info(registry: &NPLEXRegistry): vector<HashInfo> {
+        let mut list = vector::empty();
+        let len = vector::length(&registry.registered_hash_keys);
+        let mut i = 0;
+        while (i < len) {
+            let key = *vector::borrow(&registry.registered_hash_keys, i);
+            let info = *table::borrow(&registry.approved_hashes, key);
+            vector::push_back(&mut list, info);
+            i = i + 1;
+        };
+        list
     }
 
     // ==================== Testing Functions ====================

@@ -75,7 +75,8 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, ADMIN);
         let package_id = {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let (_, _, _, contract_id_opt) = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
             let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
             test_scenario::return_shared(registry);
             id
@@ -198,7 +199,8 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, ADMIN);
         let package_id = {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let (_, _, _, contract_id_opt) = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
             let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
             test_scenario::return_shared(registry);
             id
@@ -335,7 +337,8 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, ADMIN);
         let package_id = {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let (_, _, _, contract_id_opt) = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
             let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
             test_scenario::return_shared(registry);
             id
