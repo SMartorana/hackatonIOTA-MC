@@ -19,7 +19,7 @@ module nplex::ltc1_tests {
 
     // Test Data
     const DOCUMENT_HASH: u256 = 123456789;
-    const TOTAL_SUPPLY: u64 = 1000;
+    const TOTAL_SUPPLY: u64 = 1_000_000_000;
     const TOKEN_PRICE: u64 = 1_000_000; // 1 IOTA
     const NOMINAL_VALUE: u64 = 1_000_000_000;
     const SPLIT_BPS: u64 = 5000; // 50%
@@ -83,8 +83,8 @@ module nplex::ltc1_tests {
         };
 
         // 2. Buy Tokens (Investor)
-        // Investor buys 100 tokens (10% of total, 20% of max sellable)
-        let buy_amount = 100;
+        // Investor buys 100,000 tokens (0.01% of total, 0.02% of max sellable)
+        let buy_amount = 100_000;
         let cost = buy_amount * TOKEN_PRICE;
         
         next_tx(&mut scenario, INVESTOR);
@@ -106,7 +106,7 @@ module nplex::ltc1_tests {
             let package = test_scenario::take_shared_by_id<LTC1Package>(&scenario, package_id);
             let token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            assert!(ltc1::balance(&token) == 100, 0);
+            assert!(ltc1::balance(&token) == 100_000, 0);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -114,9 +114,9 @@ module nplex::ltc1_tests {
         };
 
         // 3. Deposit Revenue (Owner)
-        // Owner deposits 1000 IOTA into revenue pool
-        // Total Supply: 1000.  Total Revenue: 1000.  Revenue per Share: 1.
-        let revenue_amount = 1000;
+        // Owner deposits 1,000,000 IOTA into revenue pool
+        // Total Supply: 1B.  Total Revenue: 1M.
+        let revenue_amount = 1_000_000;
         
         next_tx(&mut scenario, OWNER);
         {
@@ -133,7 +133,7 @@ module nplex::ltc1_tests {
         };
 
         // 4. Claim Revenue (Investor)
-        // Investor has 100 tokens. Should get 100 IOTA (100 shares * 1 IOTA/share).
+        // Investor has 100,000 tokens. Should get 100 IOTA.
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -152,10 +152,9 @@ module nplex::ltc1_tests {
         
         // 5. Claim Revenue (Owner)
         // Owner owns:
-        // - Unsold: 900 shares (900 IOTA)
-        // - Legacy: 0 (since they didn't sell pre-revenue tokens? Wait.)
-        // Actually, when Investor bought, revenue was 0. So Legacy is 0.
-        // Owner gets 900 IOTA.
+        // - Unsold: 999,900,000 shares
+        // - Legacy: 0 
+        // Owner gets 999,900 IOTA.
         next_tx(&mut scenario, OWNER);
          {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -207,8 +206,8 @@ module nplex::ltc1_tests {
         };
 
         // 2. Buy More Than Allowed (Investor)
-        // Try to buy 501 tokens (Limit is 500)
-        let buy_amount = 501;
+        // Try to buy 500_000_001 tokens (Limit is 500_000_000)
+        let buy_amount = 500_000_001;
         let cost = buy_amount * TOKEN_PRICE;
         
         next_tx(&mut scenario, INVESTOR);

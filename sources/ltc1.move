@@ -17,9 +17,13 @@ module nplex::ltc1 {
     const E_WRONG_BOND: u64 = 1004;
     const E_INVALID_SPLIT: u64 = 1005;
     const E_INVALID_TOKEN: u64 = 1006;
+    const E_SUPPLY_TOO_LOW: u64 = 1007;
 
     /// Max investor share in BPS (95%)
     const MAX_INVESTOR_BPS: u64 = 9500;
+
+    /// Min total supply (decrease the dust due to divisions rounding)
+    const MIN_SUPPLY: u64 = 1_000_000_000;
 
     // ==================== Structs ====================
 
@@ -61,8 +65,8 @@ module nplex::ltc1 {
         /// Maximum supply that can be sold to investors
         max_sellable_supply: u64,
         tokens_sold: u64,
-        token_price: u64,
-        nominal_value: u64,
+        token_price: u64,// in MIST 1,000,000,000 = 1 iota
+        nominal_value: u64,// in MIST 1,000,000,000 = 1 iota
         
         // Pools
         funding_pool: Balance<IOTA>,
@@ -100,10 +104,13 @@ module nplex::ltc1 {
         // 0. Validate Split
         assert!(investor_split_bps <= MAX_INVESTOR_BPS, E_INVALID_SPLIT);
 
-        // 1. Claim hash
+        // 1. Validate Total Supply
+        assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
+
+        // 2. Claim hash
         let claim = registry::claim_hash(registry, document_hash);
 
-        // 2. Create UIDs first to get IDs (Resolves circular dependency)
+        // 3. Create UIDs first to get IDs (Resolves circular dependency)
         let package_uid = iota::object::new(ctx);
         let bond_uid = iota::object::new(ctx);
         
@@ -113,7 +120,7 @@ module nplex::ltc1 {
         // Calculate limits
         let max_sellable_supply = (total_supply * investor_split_bps) / 10000;
 
-        // 3. Create the Package (Shared Object)
+        // 4. Create the Package (Shared Object)
         let package = LTC1Package {
             id: package_uid,
             document_hash,
@@ -131,14 +138,14 @@ module nplex::ltc1 {
             metadata_uri,
         };
 
-        // 4. Create the Bond (Owned Object - Admin Key)
+        // 5. Create the Bond (Owned Object - Admin Key)
         let bond = OwnerBond {
             id: bond_uid,
             package_id: package_id,
             claimed_revenue: 0,
         };
 
-        // 5. Bind hash with Witness
+        // 6. Bind hash with Witness
         registry::bind_executor(
             registry, 
             claim, 
@@ -146,7 +153,7 @@ module nplex::ltc1 {
             LTC1Witness {}
         );
 
-        // 6. Publish
+        // 7. Publish
         // Share the package so ANYONE can find it and interact (buy tokens, view status)
         iota::transfer::share_object(package);
         
