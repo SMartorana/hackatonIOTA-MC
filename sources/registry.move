@@ -7,9 +7,9 @@
 
 module nplex::registry {
     use iota::table::{Self, Table};
-    use std::type_name::{Self, TypeName};
     use std::string;
     use iota::display;
+    use iota::dynamic_field as df;
     use iota::package;
 
     // ==================== Error Codes ====================
@@ -44,6 +44,9 @@ module nplex::registry {
         id: UID,
     }
 
+    /// Key for Authorized Executors (Dynamic Field)
+    public struct ExecutorKey<phantom T> has copy, drop, store {}
+
     /// Central registry of approved NPL package hashes
     /// Shared object - anyone can read, only admin can mutate
     public struct NPLEXRegistry has key {
@@ -54,8 +57,8 @@ module nplex::registry {
         authorized_transfers: Table<ID, address>,
         /// List of registered hash keys (Iteratable index for Frontend)
         registered_hash_keys: vector<u256>,
-        /// Maps TypeName (of the executor witness) -> is_allowed, could probably be replaced with friend for the purpose of the mvp or the iota equivalent of public(package)
-        allowed_executors: vector<TypeName>,
+        // Dynamic Fields are used for allowed_executors:
+        // Key: ExecutorKey<T> -> Value: bool (true)
     }
 
     /// Information about an approved hash
@@ -111,7 +114,6 @@ module nplex::registry {
             approved_hashes: table::new(ctx),
             authorized_transfers: table::new(ctx),
             registered_hash_keys: vector::empty(),
-            allowed_executors: vector::empty(),
         };
         transfer::share_object(registry);
 
@@ -174,9 +176,8 @@ module nplex::registry {
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
     ) {
-        let type_name = type_name::get<T>();
-        if (!vector::contains(&registry.allowed_executors, &type_name)) {
-            vector::push_back(&mut registry.allowed_executors, type_name);
+        if (!df::exists_(&registry.id, ExecutorKey<T> {})) {
+            df::add(&mut registry.id, ExecutorKey<T> {}, true);
         };
     }
 
@@ -186,10 +187,8 @@ module nplex::registry {
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
     ) {
-        let type_name = type_name::get<T>();
-        let (found, index) = vector::index_of(&registry.allowed_executors, &type_name);
-        if (found) {
-            vector::swap_remove(&mut registry.allowed_executors, index); // swap_remove is O(1) while remove is O(n)
+        if (df::exists_(&registry.id, ExecutorKey<T> {})) {
+            let _: bool = df::remove(&mut registry.id, ExecutorKey<T> {});
         };
     }
 
@@ -240,8 +239,7 @@ module nplex::registry {
         _witness: T
     ) {
         // Verify witness type is allowed
-        let witness_type = type_name::get<T>();
-        assert!(vector::contains(&registry.allowed_executors, &witness_type), E_UNAUTHORIZED_EXECUTOR);
+        assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
 
         let HashClaim { document_hash } = claim;
         
@@ -263,8 +261,7 @@ module nplex::registry {
         _witness: T
     ) {
         // 1. Verify Witness (Caller) is an allowed executor
-        let witness_type = type_name::get<T>();
-        assert!(vector::contains(&registry.allowed_executors, &witness_type), E_UNAUTHORIZED_EXECUTOR);
+        assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
 
         // 2. Verify Transfer is Authorized
         assert!(table::contains(&registry.authorized_transfers, contract_id), E_TRANSFER_NOT_AUTHORIZED);
