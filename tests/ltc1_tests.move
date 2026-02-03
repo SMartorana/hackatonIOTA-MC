@@ -772,4 +772,60 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+
+    // Test: Supply Too Low
+    // Scenario: Creator tries to issue a contract with only 100 tokens.
+    // Limit: MIN_SUPPLY is 1,000,000,000.
+    // Expected: Abort with E_SUPPLY_TOO_LOW.
+    #[test]
+    #[expected_failure(abort_code = ltc1::E_SUPPLY_TOO_LOW)]
+    fun test_create_contract_supply_too_low() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                DOCUMENT_HASH,
+                100, // TOO LOW (Min is 1B)
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                ctx(&mut scenario)
+            );
+            test_scenario::return_shared(registry);
+        };
+        test_scenario::end(scenario);
+    }
+
+    // Test: Split Too High
+    // Scenario: Creator tries to give investors 96% of the revenue.
+    // Limit: MAX_INVESTOR_BPS is 9500 (95%).
+    // Expected: Abort with E_INVALID_SPLIT.
+    #[test]
+    #[expected_failure(abort_code = ltc1::E_INVALID_SPLIT)]
+    fun test_create_contract_split_too_high() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                9600, // TOO HIGH (Max is 9500)
+                string::utf8(b"ipfs://metadata"),
+                ctx(&mut scenario)
+            );
+            test_scenario::return_shared(registry);
+        };
+        test_scenario::end(scenario);
+    }
 }
