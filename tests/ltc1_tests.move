@@ -553,4 +553,223 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    // Test Complex Lifecycle Flow
+    // Scenario:
+    // 1. Funding: Investor buys 100k tokens (Costs 100M NANOS).
+    // 2. Withdrawal: Owner withdraws the 100M NANOS funding.
+    // 3. Handover: Owner transfers Bond to NEW_OWNER (with Admin approval).
+    // 4. Revenue 1: NEW_OWNER deposits 1M NANOS revenue.
+    // 5. Claim 1: Investor claims revenue (expect 100 NANOS).
+    // 6. Secondary Market: Investor transfers tokens to INVESTOR2.
+    // 7. Revenue 2: NEW_OWNER deposits another 1M NANOS.
+    // 8. Claim 2: INVESTOR2 claims revenue (expect 100 NANOS).
+    #[test]
+    fun test_complex_lifecycle_flow() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        // 1. Create Contract (Owner)
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                ctx(&mut scenario)
+            );
+            test_scenario::return_shared(registry);
+        };
+
+        // 1.5 Get Package ID
+        next_tx(&mut scenario, ADMIN);
+        let package_id = {
+             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
+            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
+            test_scenario::return_shared(registry);
+            id
+        };
+
+        // 2. Funding: Investor buys 100k tokens
+        // Cost: 100,000 * 1,000 = 100,000,000 NANOS (0.1 IOTA)
+        let buy_amount = 100_000;
+        let cost = buy_amount * TOKEN_PRICE; 
+        
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost, &mut scenario);
+
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 3. Withdrawal: Owner withdraws funding
+        next_tx(&mut scenario, OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+
+            ltc1::withdraw_funding<IOTA>(&registry, &mut package, &bond, cost, ctx(&mut scenario));
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+
+        // Verify Owner actually got the money
+        next_tx(&mut scenario, OWNER);
+        {
+            let cash = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&cash) == cost, 0);
+            test_scenario::return_to_sender(&scenario, cash);
+        };
+
+        // 4. Handover: Authorize Transfer (Admin)
+        next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, NEW_OWNER);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 5. Handover: Transfer Bond (Owner -> NEW_OWNER)
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            ltc1::transfer_bond(&mut registry, bond, NEW_OWNER, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+        };
+
+        // 6. Revenue 1: NEW_OWNER deposits 1M NANOS
+        // Total Revenue: 1,000,000
+        let revenue_amount_1 = 1_000_000;
+        next_tx(&mut scenario, NEW_OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let payment = mint_coins(revenue_amount_1, &mut scenario);
+
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+
+        // 7. Claim 1: INVESTOR claims
+        // Share: 100k / 1B = 0.01%
+        // payout = 1M * 0.01% = 100 NANOS
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, token);
+        };
+
+        // Verify Claim 1
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let cash = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&cash) == 100, 1);
+            test_scenario::return_to_sender(&scenario, cash);
+        };
+
+        // 8. Secondary Market: INVESTOR -> INVESTOR2
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+            iota::transfer::public_transfer(token, INVESTOR2);
+        };
+
+        // 9. Revenue 2: NEW_OWNER deposits another 1M NANOS
+        // Total Revenue: 2,000,000
+        let revenue_amount_2 = 1_000_000;
+        next_tx(&mut scenario, NEW_OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let payment = mint_coins(revenue_amount_2, &mut scenario);
+
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+
+        // 10. Claim 2: INVESTOR2 claims
+        // Share: 100k / 1B = 0.01%
+        // Total accrued for share = 2M * 0.01% = 200 NANOS
+        // Already claimed on this token = 100 NANOS
+        // Payout = 200 - 100 = 100 NANOS
+        next_tx(&mut scenario, INVESTOR2);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, token);
+        };
+
+        // Verify Claim 2
+        next_tx(&mut scenario, INVESTOR2);
+        {
+            let cash = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&cash) == 100, 2);
+            test_scenario::return_to_sender(&scenario, cash);
+        };
+
+        // 11. Final Claim: NEW_OWNER claims the rest
+        // Total Revenue: 2,000,000
+        // Investor Share (0.01%): 200 NANOS
+        // Owner Share (99.99%): 1,999,800 NANOS
+        next_tx(&mut scenario, NEW_OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let mut bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+
+            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &mut bond, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+
+        // Verify Owner Amount
+        next_tx(&mut scenario, NEW_OWNER);
+        {
+            let cash = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&cash) == 1_999_800, 3);
+            test_scenario::return_to_sender(&scenario, cash);
+        };
+
+        test_scenario::end(scenario);
+    }
 }

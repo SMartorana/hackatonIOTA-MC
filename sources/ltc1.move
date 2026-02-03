@@ -86,7 +86,6 @@ module nplex::ltc1 {
 
     // ==================== Initialization ====================
 
-    #[allow(lint(share_owned))]
     fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
         // 1. Claim Publisher
         let publisher = package::claim(otw, ctx);
@@ -291,7 +290,7 @@ module nplex::ltc1 {
         assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
 
         // 2. Withdraw
-        let funding = iota::coin::take(&mut package.funding_pool, amount, ctx);
+        let funding = iota::coin::take(&mut package.funding_pool, amount, ctx); // Aborts if amount > funding_pool.value
         iota::transfer::public_transfer(funding, iota::tx_context::sender(ctx));
     }
 
