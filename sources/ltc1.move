@@ -175,7 +175,7 @@ module nplex::ltc1 {
         let bond_id = iota::object::uid_to_inner(&bond_uid);
 
         // Calculate limits
-        let max_sellable_supply = (total_supply * investor_split_bps) / 10000;
+        let max_sellable_supply = (((total_supply as u256) * (investor_split_bps as u256)) / 10000 as u64);
 
         // 4. Create the Package (Shared Object)
         let package = LTC1Package<T> {
@@ -235,7 +235,7 @@ module nplex::ltc1 {
         assert!(amount <= package.max_sellable_supply - package.tokens_sold, E_INSUFFICIENT_SUPPLY);
 
         // 2. Calculate cost
-        let cost = amount * package.token_price;
+        let cost = (((amount as u256) * (package.token_price as u256)) as u64);
         assert!(iota::coin::value(&payment) >= cost, E_INSUFFICIENT_PAYMENT);
 
         // 3. Handle Payment
@@ -254,7 +254,7 @@ module nplex::ltc1 {
         // When buying new tokens, we must prevent "buying into" past revenue.
         // The revenue attached to these tokens *up to this point* belongs to the Owner (old owner).
         // "Dividend Stripping" protection turned into "Back Pay" for Owner.
-        let initial_claimed = (amount * package.total_revenue_deposited) / package.total_supply;
+        let initial_claimed = (((amount as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
 
         // 5. Mint Token
         package.tokens_sold = package.tokens_sold + amount;
@@ -335,7 +335,7 @@ module nplex::ltc1 {
 
         // 2. Calculate Current Entitlement (Unsold Tokens)
         let unsold_supply = package.total_supply - package.tokens_sold;
-        let current_share = (unsold_supply * package.total_revenue_deposited) / package.total_supply;
+        let current_share = (((unsold_supply as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
 
         // 3. Calculate Total Entitlement (Current + Legacy)
         let total_entitled = current_share + package.owner_legacy_revenue;
@@ -391,7 +391,7 @@ module nplex::ltc1 {
 
         // 2. Calculate Entitlement
         // Formula: (balance * total_revenue_deposited) / total_supply
-        let total_entitled = (token.balance * package.total_revenue_deposited) / package.total_supply;
+        let total_entitled = (((token.balance as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
 
         // 3. Calculate Due
         let due = total_entitled - token.claimed_revenue;
