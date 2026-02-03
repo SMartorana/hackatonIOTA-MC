@@ -24,7 +24,11 @@ The LTC1 contract receives IOTA through **2 channels**:
 
 ## Architecture: The 3-Asset Model
 
-Each NPL Package is a separate smart contract that issues two distinct types of assets and maintains one shared state.
+The architecture is named after the **three distinct Move Objects** that define each NPL Package. This separation ensures security and clear separation of concerns:
+
+1.  **LTC1Package (Shared Object)**: The "State". Holds the pools (funds/revenue), metadata, and business logic. It is shared so everyone can access it.
+2.  **LTC1Token (Owned Object - Many)**: The "Investment". Tradeable NFTs representing a share of the revenue. Held by investors.
+3.  **OwnerBond (Owned Object - One)**: The "Control". A simplified non-tradeable NFT representing legal ownership and admin rights. Held by the package owner.
 
 ### Layer 1: NPLEX Registry (Validation Layer)
 - Managed by NPLEX
@@ -34,17 +38,17 @@ Each NPL Package is a separate smart contract that issues two distinct types of 
 - Only NPLEX admin can register hashes after kyc of financial institutions and the creation of the NPL package
 
 ### Layer 2: LTC1 Contracts (Token Layer)
-Each LTC1 contract represents **one NPL package** and issues two types of assets:
+Each LTC1 contract operates using these assets:
 
 #### 1. LTC1 Tokens (For Investors)
 - **Role:** Capital contribution & Revenue rights.
 - **Properties:** Transferable (`store`), Tradeable.
-- **Acquisition:** Bought by investors funds to finance the package.
+- **Acquisition:** Investors mint these by paying into the funding pool.
 
 #### 2. Owner Bond (For Owner)
 - **Role:** Represents **legal ownership** of the NPL package & "Skin in the Game".
 - **Properties:** **LOCKED** (NO `store`), Non-transferable without NPLEX approval.
-- **Acquisition:** Minted to whoever creates the LTC1 (must prove NPL ownership to NPLEX). Can be transferred with NPLEX approval.
+- **Acquisition:** Minted to whoever creates the LTC1. Can be transferred with NPLEX approval.
 
 
 ## API Reference
