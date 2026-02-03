@@ -372,4 +372,9 @@ module nplex::registry {
     public fun init_for_testing(ctx: &mut TxContext) {
         init(REGISTRY {}, ctx);
     }
+
+    #[test_only]
+    public fun is_transfer_authorized(registry: &NPLEXRegistry, package_id: ID): bool {
+        table::contains(&registry.authorized_transfers, package_id)
+    }
 }

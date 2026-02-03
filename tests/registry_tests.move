@@ -401,4 +401,108 @@ module nplex::registry_tests {
         
         test_scenario::end(scenario);
     }
+    // Transfer Logic Tests
+    #[test]
+    fun test_authorize_and_consume_transfer_ticket() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        let package_id_addr = @0x123;
+        let package_id = object::id_from_address(package_id_addr);
+        let new_owner = ALICE;
+
+        // 1. Authorize Transfer (Admin)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner);
+            
+            // Assert: Ticket Created
+            assert!(registry::is_transfer_authorized(&registry, package_id), 1);
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. Consume Ticket (Executor)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            
+            // Should succeed with correct witness and parameters
+            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, TestWitness {});
+            
+            // Assert: Ticket Consumed
+            assert!(!registry::is_transfer_authorized(&registry, package_id), 2);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_TRANSFER_NOT_AUTHORIZED)]
+    fun test_cannot_consume_ticket_with_wrong_owner() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        let package_id = object::id_from_address(@0x123);
+        let authorized_owner = ALICE;
+        let wrong_owner = BOB;
+
+        // 1. Authorize for ALICE
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. Try to consume for BOB (Fail)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            registry::consume_transfer_ticket(&mut registry, package_id, wrong_owner, TestWitness {});
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_EXECUTOR)]
+    fun test_unauthorized_executor_cannot_consume_ticket() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        let package_id = object::id_from_address(@0x123);
+        let new_owner = ALICE;
+
+        // 1. Authorize
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. Try to consume with UnauthorizedWitness (Fail)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, UnauthorizedWitness {});
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
 }
