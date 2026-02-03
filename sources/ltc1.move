@@ -389,4 +389,9 @@ module nplex::ltc1 {
     public fun claimed_revenue(token: &LTC1Token): u64 {
         token.claimed_revenue
     }
+
+    /// Verify if a proposed document hash matches the package's registered hash
+    public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bool {
+        package.document_hash == document_hash
+    }
 }
