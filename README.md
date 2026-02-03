@@ -41,84 +41,11 @@ Each LTC1 contract represents **one NPL package** and issues two types of assets
 - **Properties:** Transferable (`store`), Tradeable.
 - **Acquisition:** Bought by investors funds to finance the package.
 
-#### 2. Servicer Bond (For Owner/Servicer)
+#### 2. Owner Bond (For Owner)
 - **Role:** Represents **legal ownership** of the NPL package & "Skin in the Game".
 - **Properties:** **LOCKED** (NO `store`), Non-transferable without NPLEX approval.
 - **Acquisition:** Minted to whoever creates the LTC1 (must prove NPL ownership to NPLEX). Can be transferred with NPLEX approval.
 
-### NPL Package Contract
-
-Each package contains:
-- **Document Hash**: SHA-256 of ZIP file (immutable, the actual hash of the NPL package documents)
-- **Token Supply**: Fixed supply minted at creation (non-burnable)
-- **ServicerBond**: Represents ownership — whoever holds it has executive power over the package
-- **Revenue Pool**: IOTA deposited by the Bond holder when debts are recovered
-- **Metadata**: Nominal value, creation date, etc.
-
-## Data Structures
-
-### NPLEX Registry Contract
-
-```move
-// Admin capability for NPLEX
-struct NPLEXAdminCap has key, store {
-    id: UID,
-}
-
-// Registry of approved hashes (shared object)
-struct NPLEXRegistry has key {
-    id: UID,
-    approved_hashes: Table<vector<u8>, HashInfo>,  // hash -> info
-}
-
-// Information about approved hash
-struct HashInfo has store {
-    approved_timestamp: u64,
-    auditor: address,
-    is_revoked: bool,
-    contract_id: Option<ID>,  // ID of LTC1 contract if created, None otherwise
-}
-```
-
-### LTC1 Contract
-
-```move
-// 1. Investor Token (Transferable)
-struct LTC1Token has key, store {
-    id: UID,
-    balance: u64,              // Number of "shares" this token represents
-    package_id: ID,            // Reference to parent LTC1Package
-    claimed_revenue: u64,      // Total IOTA this token has already claimed
-}
-
-// 2. Servicer Bond (Locked - NO STORE capability)
-// Servicer must hold this to claim their share. Cannot sell.
-struct ServicerBond has key {
-    id: UID,
-    balance: u64,             // e.g. 50% of supply
-    servicer: address,        // Owner
-    package_id: ID,           // Reference to parent
-    claimed_revenue: u64,     // Track claims
-}
-
-// 3. Main LTC1 Package (shared object)
-struct LTC1Package has key {
-    id: UID,
-    document_hash: vector<u8>,        // SHA-256 of ZIP (validated)
-    total_supply: u64,                // Total token shares (immutable)
-    tokens_sold: u64,                 // Track how many tokens sold
-    token_price: u64,                 // Price per token in NANOS
-    nominal_value: u64,               // Face value of NPL package
-    
-    funding_pool: Balance<IOTA>,      // IOTA from token sales (Bond holder withdrawable)
-    revenue_pool: Balance<IOTA>,      // Debt recovery proceeds (token/bond holder claimable)
-    total_revenue_deposited: u64,     // Total IOTA ever deposited to revenue_pool
-    
-    servicer: address,                // Current Bond holder (updated on transfer)
-    creation_timestamp: u64,
-    metadata_uri: String,             // IPFS/HTTP link
-}
-```
 
 ## API Reference
 
@@ -140,11 +67,11 @@ struct LTC1Package has key {
 |----------|-------------|
 | `create_ltc1()` | Initialize new LTC1 with hash validation and token minting |
 | `buy_tokens()` | Investors purchase tokens (IOTA → funding pool) |
-| `withdraw_funding()` | Bond holder withdraws funding pool (requires ServicerBond) |
-| `deposit_revenue()` | Bond holder deposits recovered funds (requires ServicerBond) |
+| `withdraw_funding()` | Bond holder withdraws funding pool (requires OwnerBond) |
+| `deposit_revenue()` | Bond holder deposits recovered funds (requires OwnerBond) |
 | `claim_revenue_investor()` | Token holders claim proportional revenue |
-| `claim_revenue_servicer()` | Servicer claims revenue via locked Bond |
-| `transfer_servicer_bond()` | Restricted transfer (requires NPLEX approval) |
+| `claim_revenue_owner()` | Owner claims revenue via locked Bond |
+| `transfer_bond()` | Restricted transfer (requires NPLEX approval) |
 | `verify_document()` | Verify document hash matches |
 | `get_package_info()` | View package metadata |
 
@@ -155,109 +82,41 @@ struct LTC1Package has key {
 3. **LTC1 Creation**: Creator creates LTC1 contract (validates hash against Registry)
 4. **Token Sale**: Investors buy tokens directly from LTC1 using `buy_tokens()`, IOTA goes to funding pool
 5. **Funding Withdrawal**: Bond holder withdraws IOTA from funding pool to finance NPL acquisition
-6. **Recovery**: Bond holder recovers debt → deposits IOTA into revenue pool (requires ServicerBond)
+6. **Recovery**: Bond holder recovers debt → deposits IOTA into revenue pool (requires OwnerBond)
 7. **Claim**: Token holders claim proportional share from revenue pool
 8. **Termination**: NPLEX revokes hash in Registry (when all credits resolved) → blocks operations except claims
 
-## Revenue Distribution Mechanism
+## Revenue Distribution Mechanism (Proportional / Pari-Passu)
 
-### How it works
-
-1. **Servicer deposits** X IOTA into revenue_pool (from recovered debts)
-2. **Package tracks** `total_revenue_deposited` (cumulative)
-3. **Token holder claims** with their token
-4. **Contract calculates** claimable amount:
-   ```
-   total_entitled = (token.balance / total_supply) * total_revenue_deposited
-   claimable = total_entitled - token.claimed_revenue
-   ```
-5. **Token updated**: `token.claimed_revenue += claimable`
-6. **Prevents double-claiming**: Each token remembers what it claimed
-
-### Example
-
-- Total Supply: 1,000 token shares
-- Alice's token: 250 shares (25%)
-- Servicer deposits: 100 IOTA (total_revenue_deposited = 100)
-- Alice claims: 
-  - Entitled: 250/1000 * 100 = 25 IOTA
-  - Already claimed: 0
-  - Receives: 25 IOTA
-  - Token updated: claimed_revenue = 25
-- Servicer deposits another 200 IOTA (total_revenue_deposited = 300)
-- Alice claims again:
-  - Entitled: 250/1000 * 300 = 75 IOTA
-  - Already claimed: 25
-  - Receives: 50 IOTA
-  - Token updated: claimed_revenue = 75
-- **Alice transfers token to Bob**
-- Bob can claim:
-  - Entitled: 250/1000 * 300 = 75 IOTA
-  - Already claimed (by token): 75
-  - Receives: 0 IOTA No double-claim!
+Unlike complex **Waterfall Distribution** (or Tranche-based) models where Senior bonds get paid before Junior bonds, LTC1 uses a simple **Proportional Distribution** model. Every token holder is entitled to a share of the revenue exactly equal to their percentage of ownership in the total supply.
 
 ## Key Design Decisions
 
-### 1. ServicerBond = Ownership
-The **ServicerBond** represents **legal ownership and executive power** over the NPL package.
+### 1. OwnerBond = Ownership
+The **OwnerBond** represents **legal ownership and executive power** over the NPL package.
 
-**Why?** To prevent owners from dumping "bad" packages on investors and walking away.
-- To create an LTC1, you must prove to NPLEX that you legally own the NPL.
-- The contract mints a **ServicerBond** (e.g., 50% of supply) directly to the creator.
-- This Bond has **NO `store` capability** — it **cannot be freely transferred or sold**.
-- The owner is forced to hold the asset until maturity to realize any value.
-- **Whoever holds the Bond can**: withdraw funding, deposit revenue, and claim their share.
+**Why?** To enforce **Risk Retention** (or "Skin in the Game").
+In securitization markets, regulations often require the originator of a security to retain a certain percentage of the risk (e.g. 5%) to ensure their incentives are aligned with investors. If the asset performs poorly, the originator suffers losses alongside the investors.
 
-**Restricted Transfer (with NPLEX Approval):**
-If the Bond holder wants to sell their ownership/servicing rights:
-1. Seller and buyer create a sale contract (off-chain legal agreement)
-2. NPLEX reviews and notarizes the sale contract → hash is registered on-chain
-3. NPLEX authorizes the bond transfer via `transfer_servicer_bond()` (requires `NPLEXAdminCap`)
-4. Bond is transferred to the new owner, and `LTC1Package.servicer` is updated
+The **OwnerBond** enforces this by locking a portion of the supply with the creator/owner. This bond cannot be sold on the open market, ensuring the owner remains committed to the asset's performance.
 
-This ensures all ownership transfers are legally documented and auditable.
+  **Token Purchase (Primary Sale):**
+- Creator (Bank) creates the package and receives **only the OwnerBond**.
+- Investors call `buy_tokens()` to purchase shares. The contract **mints new LTC1 Tokens (NFTs)** directly to the investor.
+- Creator may sell OwnerBond to a Servicer (requires NPLEX approval).
+- The OwnerBond represents the **legal ownership** of the NPL package and the **executive power** to manage it, and, in the context of this contract, it also represents all unsold shares of the NPL package and the right to: claim the revenue from tokens sold, withdraw the funding pool, deposit the revenue, and transfer the bond with NPLEX approval.
 
-### 2. Token Lifecycle
-```
-Creation (Bank) → Mints LTC1 Tokens (for sale) + ServicerBond (to Bank) →
-Bank sells LTC1 Tokens to Investors → IOTA funding goes to Bank →
-Bank sells ServicerBond to Servicer (requires NPLEX approval) →
-Servicer works to recover debt → Deposits IOTA to Revenue Pool →
-Investors claim via LTC1 Tokens (Tradeable) →
-Servicer claims via ServicerBond (Locked until transferred with NPLEX approval)
-```
-
-**Token Purchase (Primary Sale):**
-- Creator (Bank) creates the package and receives both LTC1 Tokens and ServicerBond.
-- Creator sells LTC1 Tokens to investors (Primary Market) to raise liquidity.
-- Creator may sell ServicerBond to a Servicer (requires NPLEX approval).
-
-**Dual Pool & Revenue:**
-- **Revenue Pool**: Single pool for ALL recovered funds.
-- **Distribution**: Proportional to supply (e.g., if Servicer holds 50% Bond, they get 50% of revenue).
-
-### 3. Cumulative Claims
+### 2. Cumulative Claims
 Both Investors and Bond holder claim **all accumulated unclaimed revenue** when calling their claim functions.
 
-**Example:**
-- Total Supply: 1000 (500 Tokens + 500 Bond)
-- Alice: 10 Tokens (1%)
-- Bond holder: 500 Bond (50%)
-- Deposit: 1000 IOTA
-- **Alice claims**: 10 IOTA (1%)
-- **Bond holder claims**: 500 IOTA (50%)
-- **Token/Bond tracks**: `claimed_revenue` to prevent double-claiming.
-
-**Note:** Unclaimed revenue stays in the contract forever. Holders can claim at any time.
-
-### 4. Default Scenario
+### 3. Default Scenario
 If the Bond holder never recovers any debts:
 - Revenue pool remains empty
 - Tokens and Bond remain valid but worthless
 - Bond holder loses their time/effort (Skin in the Game penalty)
 - NPLEX may initiate legal action
 
-### 5. Metadata & Documentation
+### 4. Metadata & Documentation
 - **Document Hash**: SHA-256 of NPL package ZIP (immutable)
 - **Metadata URI**: IPFS/HTTPS link to documents
 - **On-chain**: Minimal metadata to save gas
@@ -276,29 +135,8 @@ If the Bond holder never recovers any debts:
 **Revocation reasons:**
 - All debts fully recovered (package liquidated)
 - Fraud detected (legal action initiated)
-- Servicer failed obligations
 
-**Post-termination**: Tokens remain as proof of investment.
-
-## Security Considerations
-
-> [!IMPORTANT]
-> Critical security features
-
-- **Hash Validation**: LTC1 creation requires approved hash from NPLEX Registry
-- **Uniqueness Enforcement**: Only one LTC1 contract can be created per hash
-- **Hash Immutability**: Document hash cannot be changed after registration
-- **Dual Pools**: Funding and revenue pools are separate
-- **No Token Minting**: Tokens only minted once at creation
-- **No Token Burning**: Tokens cannot be destroyed
-- **Bond-Based Authorization**: Deposit and withdrawal require passing the ServicerBond object (not just address check)
-- **Anti-Double-Claim**: Token-level `claimed_revenue` tracking prevents double-claims even after transfer
-- **Transfer-Safe**: Tokens carry claim history with them when transferred
-- **Revocation Control**: NPLEX can halt all operations except claims via Registry
-- **Price Immutability**: Token price is set at creation and cannot change
-- **Locked Bond**: Bond cannot be transferred without NPLEX approval (Critical Security Feature)
-- **Emergency Revoke**: NPLEX can invalidate fraudulent contracts
-- **Permanent Claims**: Unclaimed revenue stays in contract forever — holders can claim at any time
+**Post-termination**: Tokens remain as proof of investment as well as the OwnerBond as proof of ownership.
 
 ## Business Model (Future)
 
@@ -306,10 +144,18 @@ If the Bond holder never recovers any debts:
 - Revenue streams (planned):
   - Platform consultation services
   - LTC1 management services
-  - Possible transaction fees (TBD)
+  - Possible transaction fees (TBD when NPLEX must be involved, free otherwise)
 
 ## Compliance & Scope (MVP)
 
 - **No jurisdiction/country fields** - compliance deferred to post-MVP
 - Focus: Technical proof-of-concept for tokenization
+
+## Future Implementations
+
+### Granular Revocation Control
+Currently, revocation is a binary state. Future versions will support granular permissions:
+- **Block Deposits Only**: Stop new investments/deposits but allow withdrawals.
+- **Block Trading**: Stop token transfers while allowing claims.
+- **Full Freeze**: Stop all operations for investigation.
 

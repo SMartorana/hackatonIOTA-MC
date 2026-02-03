@@ -1,4 +1,4 @@
 build
-fake_eurc
-deployed_addresses.json
 Move.lock
+fake_eurc/
+deployed_addresses.json
