@@ -15,12 +15,13 @@ module nplex::ltc1_tests {
     const ADMIN: address = @0xAD;
     const OWNER: address = @0xB;
     const INVESTOR: address = @0xC;
+    const INVESTOR2: address = @0xE;
     const NEW_OWNER: address = @0xD;
 
     // Test Data
     const DOCUMENT_HASH: u256 = 123456789;
     const TOTAL_SUPPLY: u64 = 1_000_000_000;
-    const TOKEN_PRICE: u64 = 1_000_000_000; // 1 IOTA
+    const TOKEN_PRICE: u64 = 1_000; // (0.000001 IOTA)
     const NOMINAL_VALUE: u64 = 1_000_000_000;
     const SPLIT_BPS: u64 = 5000; // 50%
 
@@ -49,6 +50,14 @@ module nplex::ltc1_tests {
 
     // ==================== Tests ====================
 
+    // Test end to end flow
+    // Arrange: Initialize the registry, register the document hash, and authorize the LTC1 witness.
+    // Act: Create the LTC1 contract, mint tokens, and perform investment transactions.
+    // Assert: Verify the total supply, token balances, and correct distribution of funds.
+    // Scenario: An LTC1 is issued with 1B tokens and price of 1,000 NANOS (1 MICRON).
+    // 100k tokens are sold to investor 1, 200k tokens are sold to investor 2.
+    // Owner deposits 1M NANOS into revenue pool.
+    // Investor 1 must claim 100 nano, investor 2 claims 200 nano, owner claims 999,700 nano.
     #[test]
     fun test_end_to_end_flow() {
         let mut scenario = test_scenario::begin(ADMIN);
@@ -83,6 +92,8 @@ module nplex::ltc1_tests {
         };
 
         // 2. Buy Tokens (Investor)
+        // Total Supply: 1,000,000,000
+        // Max Sellable: 500,000,000 (50%)
         // Investor buys 100,000 tokens (0.01% of total, 0.02% of max sellable)
         let buy_amount = 100_000;
         let cost = buy_amount * TOKEN_PRICE;
@@ -99,7 +110,24 @@ module nplex::ltc1_tests {
             test_scenario::return_shared(package);
         };
 
-        //assert investor has 100 tokens
+        // 2.5 Buy Tokens (Investor 2)
+        // Investor2 buys 200,000 tokens
+        let buy_amount_2 = 200_000;
+        let cost_2 = buy_amount_2 * TOKEN_PRICE;
+        
+        next_tx(&mut scenario, INVESTOR2);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost_2, &mut scenario);
+
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount_2, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        //assert investor has 100,000 tokens
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -114,8 +142,8 @@ module nplex::ltc1_tests {
         };
 
         // 3. Deposit Revenue (Owner)
-        // Owner deposits 1,000,000 IOTA into revenue pool
-        // Total Supply: 1B.  Total Revenue: 1M.
+        // Owner deposits 1,000,000 NANOS (0.001 IOTA) into revenue pool
+        // Total Supply: 1B.  Total Revenue: 1M NANOS.
         let revenue_amount = 1_000_000;
         
         next_tx(&mut scenario, OWNER);
@@ -133,7 +161,9 @@ module nplex::ltc1_tests {
         };
 
         // 4. Claim Revenue (Investor)
-        // Investor has 100,000 tokens. Should get 100 IOTA.
+        // Investor has 100,000 tokens (0.01% of Total Supply)
+        // Revenue Pool: 1,000,000 NANOS
+        // Share: 100,000 / 1,000,000,000 * 1,000,000 = 100 NANOS
         next_tx(&mut scenario, INVESTOR);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -142,19 +172,45 @@ module nplex::ltc1_tests {
 
             ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
 
-            // Verify payout (not easily checkable in simple test without inspecting events or balances, 
-            // but if it didn't abort, it worked. We assume math coverage in logic).
-            
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
             test_scenario::return_to_sender(&scenario, token);
         };
+
+        // 4.5 Verify Investor Revenue (100 NANOS)
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let revenue = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&revenue) == 100, 1);
+            test_scenario::return_to_sender(&scenario, revenue);
+        };
+
+        // 4.6 Claim Revenue (Investor 2)
+        next_tx(&mut scenario, INVESTOR2);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, token);
+        };
+
+        // 4.7 Verify Investor 2 Revenue (200 NANOS)
+        next_tx(&mut scenario, INVESTOR2);
+        {
+            let revenue = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&revenue) == 200, 3);
+            test_scenario::return_to_sender(&scenario, revenue);
+        };
         
         // 5. Claim Revenue (Owner)
-        // Owner owns:
-        // - Unsold: 999,900,000 shares
-        // - Legacy: 0 
-        // Owner gets 999,900 IOTA.
+        // Owner owns remaining shares: 1,000,000,000 - 300,000 = 999,700,000 (99.97%)
+        // Legacy Revenue: 0
+        // Share: 999,700,000 / 1,000,000,000 * 1,000,000 = 999,700 NANOS
         next_tx(&mut scenario, OWNER);
          {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -168,9 +224,23 @@ module nplex::ltc1_tests {
             test_scenario::return_to_sender(&scenario, bond);
         };
 
+        // 5.5 Verify Owner Revenue (999,700 NANOS)
+        next_tx(&mut scenario, OWNER);
+        {
+            let revenue = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&revenue) == 999_700, 2);
+            test_scenario::return_to_sender(&scenario, revenue);
+        };
+
         test_scenario::end(scenario);
     }
 
+    // Test supply split enforcement
+    // Arrange: Create a contract with 50% split (Max Sellable = 50% of supply).
+    // Act: Investor tries to buy 50% + 1 token.
+    // Assert: Transaction aborts with E_INSUFFICIENT_SUPPLY.
+    // Scenario: Creator sets 50% split (5000 bps). Total supply 1B. Max sellable 500M.
+    // Investor tries to buy 500,000,001 tokens. Implementation must block this.
     #[test]
     #[expected_failure(abort_code = ltc1::E_INSUFFICIENT_SUPPLY)]
     fun test_supply_split_enforcement() {
@@ -225,6 +295,12 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    // Test contract creation with unregistered hash
+    // Arrange: Registry initialized, witness authorized, but HASH NOT REGISTERED.
+    // Act: Creator attempts to create contract with this hash.
+    // Assert: Transaction aborts with E_HASH_NOT_APPROVED.
+    // Scenario: Admin forgets to register document hash. Creator calls create_contract.
+    // System must reject the creation attempt.
     #[test]
     #[expected_failure(abort_code = registry::E_HASH_NOT_APPROVED)]
     fun test_create_contract_not_registered_hash() {
@@ -268,6 +344,12 @@ module nplex::ltc1_tests {
         test_scenario::end(scenario);
     }
 
+    // Test contract creation with unauthorized witness
+    // Arrange: Registry initialized, hash registered, but WITNESS NOT AUTHORIZED.
+    // Act: Creator attempts to create contract using this witness type.
+    // Assert: Transaction aborts with E_UNAUTHORIZED_EXECUTOR.
+    // Scenario: Hash is valid, but the contract type (LTC1) was not allowlisted by Admin.
+    // System must reject binding this contract type to the hash.
     #[test]
     #[expected_failure(abort_code = registry::E_UNAUTHORIZED_EXECUTOR)]
     fun test_create_contract_unauthorized_witness() {
@@ -310,6 +392,12 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    // Test owner bond transfer
+    // Arrange: Contract created. Admin authorizes transfer of Bond to NEW_OWNER.
+    // Act: Owner calls transfer_bond.
+    // Assert: Bond is successfully moved to NEW_OWNER.
+    // Scenario: Owner sells the deal to another servicer. Admin approves the transfer.
+    // Original Owner executes transfer. New Owner receives the Bond object.
     #[test]
     fun test_owner_bond_transfer() {
         let mut scenario = test_scenario::begin(ADMIN);
@@ -386,6 +474,12 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    // Test withdraw funding
+    // Arrange: Investor buys tokens, funding the pool.
+    // Act: Owner withdraws the raised capital using OwnerBond.
+    // Assert: Owner's coin balance increases by the withdrawn amount.
+    // Scenario: 100k tokens sold for 100,000,000 NANOS (0.1 IOTA). Pool has 100M NANOS.
+    // Owner withdraws 100M NANOS. Owner receives 100M NANOS.
     #[test]
     fun test_withdraw_funding() {
         let mut scenario = test_scenario::begin(ADMIN);
