@@ -20,7 +20,7 @@ module nplex::ltc1_tests {
     // Test Data
     const DOCUMENT_HASH: u256 = 123456789;
     const TOTAL_SUPPLY: u64 = 1_000_000_000;
-    const TOKEN_PRICE: u64 = 1_000_000; // 1 IOTA
+    const TOKEN_PRICE: u64 = 1_000_000_000; // 1 IOTA
     const NOMINAL_VALUE: u64 = 1_000_000_000;
     const SPLIT_BPS: u64 = 5000; // 50%
 
