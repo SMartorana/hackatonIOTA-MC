@@ -66,10 +66,10 @@ module nplex::ltc1 {
         /// Maximum supply that can be sold to investors
         max_sellable_supply: u64,
         tokens_sold: u64,
-        token_price: u64,// in MIST 1,000,000,000 = 1 iota
+        token_price: u64,// in NANOS 1,000,000,000 = 1 iota
 
         // this is metadata, the value the originator of the security gave to this asset at creation
-        nominal_value: u64,// in MIST 1,000,000,000 = 1 iota
+        nominal_value: u64,// in NANOS 1,000,000,000 = 1 iota
         
         // Pools
         funding_pool: Balance<T>,
@@ -265,6 +265,26 @@ module nplex::ltc1 {
         package.owner_legacy_revenue = package.owner_legacy_revenue + initial_claimed;
 
         iota::transfer::public_transfer(token, iota::tx_context::sender(ctx));
+    }
+
+    /// Withdraw Funding from the package (Owner Only)
+    /// Requires the OwnerBond (Admin Capability)
+    public entry fun withdraw_funding<T>(
+        registry: &NPLEXRegistry,
+        package: &mut LTC1Package<T>,
+        bond: &OwnerBond,
+        amount: u64,
+        ctx: &mut iota::tx_context::TxContext
+    ) {
+        // 0. Verify Contract Status (not revoked)
+        assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+
+        // 1. Verify OwnerBond matches this package
+        assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
+
+        // 2. Withdraw
+        let funding = iota::coin::take(&mut package.funding_pool, amount, ctx);
+        iota::transfer::public_transfer(funding, iota::tx_context::sender(ctx));
     }
 
     /// Deposit revenue into the package (Owner Only)

@@ -53,27 +53,32 @@ Each LTC1 contract represents **one NPL package** and issues two types of assets
 
 | Function | Description |
 |----------|-------------|
-| `init()` | Initialize registry with NPLEX admin capability |
-| `register_hash()` | NPLEX registers approved package hash |
-| `is_valid_hash()` | Check if hash is approved and not revoked |
-| `mark_hash_used()` | Mark hash as used (prevent duplicates) |
-| `is_hash_used()` | Check if hash already has a contract |
-| `revoke_hash()` | Emergency revoke (if fraud detected) |
-| `unrevoke_hash()` | Un-revoke a hash (if revocation was in error) |
+| `register_hash` | NPLEX registers approved package hash (Admin Only) |
+| `revoke_hash` | Emergency revoke if fraud detected (Admin Only) |
+| `unrevoke_hash` | Un-revoke a hash (Admin Only) |
+| `add_executor` | Authorize a module (LTC1) to bind to hashes (Admin Only) |
+| `remove_executor` | De-authorize a module (Admin Only) |
+| `authorize_transfer` | Authorize the transfer of an OwnerBond (Admin Only) |
+| `claim_hash` | Start the contract creation process by claiming a hash |
+| `bind_executor` | Bind a claimed hash to a new contract ID |
+| `consume_transfer_ticket` | Consume authorization to execute a Bond transfer |
+| `is_valid_hash` | Check if hash is approved and not revoked |
+| `get_hash_info` | Get full status of a registered hash |
 
 ### LTC1 Module
 
 | Function | Description |
 |----------|-------------|
-| `create_ltc1()` | Initialize new LTC1 with hash validation and token minting |
-| `buy_tokens()` | Investors purchase tokens (IOTA → funding pool) |
-| `withdraw_funding()` | Bond holder withdraws funding pool (requires OwnerBond) |
-| `deposit_revenue()` | Bond holder deposits recovered funds (requires OwnerBond) |
-| `claim_revenue_investor()` | Token holders claim proportional revenue |
-| `claim_revenue_owner()` | Owner claims revenue via locked Bond |
-| `transfer_bond()` | Restricted transfer (requires NPLEX approval) |
-| `verify_document()` | Verify document hash matches |
-| `get_package_info()` | View package metadata |
+| `create_contract` | Initialize new LTC1 with hash validation and token minting |
+| `buy_token` | Investors purchase tokens (IOTA → funding pool) |
+| `withdraw_funding` | Owner withdraws raised capital (requires OwnerBond) |
+| `deposit_revenue` | Owner deposits recovered funds (requires OwnerBond) |
+| `claim_revenue` | Token holders claim proportional revenue |
+| `claim_revenue_owner` | Owner claims revenue via locked Bond |
+| `transfer_bond` | Restricted transfer (requires NPLEX approval) |
+| `verify_document` | Verify document hash matches (Public) |
+| `balance` | View token balance (Public) |
+| `claimed_revenue` | View total revenue claimed by a token (Public) |
 
 ## Workflow
 

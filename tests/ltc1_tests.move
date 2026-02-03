@@ -386,4 +386,77 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    #[test]
+    fun test_withdraw_funding() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        // 1. Create Contract (Owner)
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                ctx(&mut scenario)
+            );
+            test_scenario::return_shared(registry);
+        };
+
+        // 1.5 Get Package ID
+        next_tx(&mut scenario, ADMIN);
+        let package_id = {
+             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
+            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
+            test_scenario::return_shared(registry);
+            id
+        };
+
+        // 2. Buy Tokens (Investor) -> Funds the pool
+        let buy_amount = 100_000;
+        let cost = buy_amount * TOKEN_PRICE; 
+        
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost, &mut scenario);
+
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 3. Withdraw Funding (Owner)
+        next_tx(&mut scenario, OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+
+            ltc1::withdraw_funding<IOTA>(&registry, &mut package, &bond, cost, ctx(&mut scenario));
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+        
+        // 4. Verify Owner Balance
+        next_tx(&mut scenario, OWNER);
+        {
+            let withdrawn_coin = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&withdrawn_coin) == cost, 0);
+            test_scenario::return_to_sender(&scenario, withdrawn_coin);
+        };
+
+        test_scenario::end(scenario);
+    }
 }
