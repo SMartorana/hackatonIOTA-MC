@@ -91,7 +91,16 @@ module nplex::ltc1 {
         // 1. Claim Publisher
         let publisher = package::claim(otw, ctx);
 
-        // 2. Define Display for OwnerBond
+        // 2. Setup Display
+        setup_display(&publisher, ctx);
+
+        // 3. Cleanup & Transfer
+        iota::transfer::public_transfer(publisher, iota::tx_context::sender(ctx));
+    }
+
+    #[allow(lint(share_owned))]
+    fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::TxContext) {
+        // 1. Define Display for OwnerBond
         let bond_keys = vector[
             string::utf8(b"name"),
             string::utf8(b"description"),
@@ -107,11 +116,11 @@ module nplex::ltc1 {
         ];
 
         let mut bond_display = display::new_with_fields<OwnerBond>(
-            &publisher, bond_keys, bond_values, ctx
+            publisher, bond_keys, bond_values, ctx
         );
         display::update_version(&mut bond_display);
 
-        // 3. Define Display for LTC1Token
+        // 2. Define Display for LTC1Token
         let token_keys = vector[
             string::utf8(b"name"),
             string::utf8(b"description"),
@@ -127,12 +136,11 @@ module nplex::ltc1 {
         ];
 
         let mut token_display = display::new_with_fields<LTC1Token>(
-            &publisher, token_keys, token_values, ctx
+            publisher, token_keys, token_values, ctx
         );
         display::update_version(&mut token_display);
 
-        // 4. Cleanup & Transfer
-        iota::transfer::public_transfer(publisher, iota::tx_context::sender(ctx));
+        // 3. Share Displays
         iota::transfer::public_share_object(bond_display);
         iota::transfer::public_share_object(token_display);
     }
