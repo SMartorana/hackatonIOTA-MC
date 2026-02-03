@@ -20,8 +20,9 @@ module nplex::ltc1 {
     const E_INVALID_TOKEN: u64 = 1006;
     const E_SUPPLY_TOO_LOW: u64 = 1007;
 
-    /// Max investor share in BPS (95%)
-    const MAX_INVESTOR_BPS: u64 = 9500;
+    /// Max investor share in BPS (95.0000%) - 6 decimals
+    const MAX_INVESTOR_BPS: u64 = 950_000;
+    const SPLIT_DENOMINATOR: u64 = 1_000_000;
 
     /// Min total supply (decrease the dust due to divisions rounding)
     const MIN_SUPPLY: u64 = 1_000_000_000;
@@ -175,7 +176,7 @@ module nplex::ltc1 {
         let bond_id = iota::object::uid_to_inner(&bond_uid);
 
         // Calculate limits
-        let max_sellable_supply = (((total_supply as u256) * (investor_split_bps as u256)) / 10000 as u64);
+        let max_sellable_supply = (((total_supply as u256) * (investor_split_bps as u256)) / (SPLIT_DENOMINATOR as u256)) as u64;
 
         // 4. Create the Package (Shared Object)
         let package = LTC1Package<T> {

@@ -23,7 +23,7 @@ module nplex::ltc1_tests {
     const TOTAL_SUPPLY: u64 = 1_000_000_000;
     const TOKEN_PRICE: u64 = 1_000; // (0.000001 IOTA)
     const NOMINAL_VALUE: u64 = 1_000_000_000;
-    const SPLIT_BPS: u64 = 5000; // 50%
+    const SPLIT_BPS: u64 = 500_000; // 50.0000%
 
     // ==================== Helpers ====================
 
@@ -820,7 +820,7 @@ module nplex::ltc1_tests {
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
-                9600, // TOO HIGH (Max is 9500)
+                960000, // TOO HIGH (Max is 950000)
                 string::utf8(b"ipfs://metadata"),
                 ctx(&mut scenario)
             );
