@@ -9,6 +9,7 @@ module nplex::ltc1_tests {
     use iota::test_scenario::{Self, Scenario, next_tx, ctx};
     use iota::coin::{Self, Coin};
     use iota::iota::IOTA;
+    use iota::clock;
     use std::string::{Self};
 
     // Test Users
@@ -67,6 +68,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -75,8 +77,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -251,6 +255,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -259,8 +264,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS, // 5000
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -328,6 +335,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -336,8 +344,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -377,6 +387,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -385,8 +396,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -407,6 +420,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -415,8 +429,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -489,6 +505,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -497,8 +514,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -572,6 +591,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -580,8 +600,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
@@ -786,6 +808,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -794,8 +817,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
         test_scenario::end(scenario);
@@ -814,6 +839,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -822,8 +848,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 960000, // TOO HIGH (Max is 950000)
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
         test_scenario::end(scenario);
@@ -844,6 +872,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 DOCUMENT_HASH,
@@ -852,8 +881,10 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                &clock,
                 ctx(&mut scenario)
             );
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 

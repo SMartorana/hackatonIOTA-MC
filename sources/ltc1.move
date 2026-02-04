@@ -10,6 +10,7 @@ module nplex::ltc1 {
     use std::string::{Self, String};
     use iota::display;
     use iota::package;
+    use iota::clock::{Self, Clock};
 
     // ==================== Errors ====================
     const E_INSUFFICIENT_SUPPLY: u64 = 1001;
@@ -155,6 +156,7 @@ module nplex::ltc1 {
         nominal_value: u64,
         investor_split_bps: u64,
         metadata_uri: String,
+        clock: &Clock,
         ctx: &mut iota::tx_context::TxContext
     ) {
         let owner = iota::tx_context::sender(ctx); // Owner is the creator
@@ -192,7 +194,7 @@ module nplex::ltc1 {
             total_revenue_deposited: 0,
             owner_legacy_revenue: 0,
             owner_bond_id: bond_id,
-            creation_timestamp: iota::tx_context::epoch(ctx),
+            creation_timestamp: clock::timestamp_ms(clock),
             metadata_uri,
         };
 
