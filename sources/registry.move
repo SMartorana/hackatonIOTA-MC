@@ -29,6 +29,9 @@ module nplex::registry {
     /// Bond transfer not authorized by NPLEX
     const E_TRANSFER_NOT_AUTHORIZED: u64 = 5;
 
+    /// Creator is not authorized for this hash
+    const E_UNAUTHORIZED_CREATOR: u64 = 6;
+
     // ==================== Structs ====================
     /// One-Time Witness for the module
     public struct REGISTRY has drop {}
@@ -71,6 +74,8 @@ module nplex::registry {
         is_revoked: bool,
         /// ID of LTC1 contract created with this hash (None if not yet used)
         contract_id: option::Option<ID>,
+        /// Only this address is authorized to create a contract with this hash
+        authorized_creator: address,
     }
 
     // ==================== Initialization ====================
@@ -136,6 +141,7 @@ module nplex::registry {
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
         document_hash: u256,
+        authorized_creator: address, 
         ctx: &TxContext
     ) {
         assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
@@ -145,6 +151,7 @@ module nplex::registry {
             auditor: tx_context::sender(ctx),
             is_revoked: false,
             contract_id: option::none(),
+            authorized_creator,
         };
         
         table::add(&mut registry.approved_hashes, document_hash, hash_info);
@@ -219,7 +226,8 @@ module nplex::registry {
     /// Invariant: hash must have been registered before and not revoked and not used yet by another ltc1 contract
     public fun claim_hash(
         registry: &mut NPLEXRegistry,
-        document_hash: u256
+        document_hash: u256,
+        ctx: &TxContext
     ): HashClaim {
         // Verify hash is approved
         assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
@@ -231,6 +239,9 @@ module nplex::registry {
         
         // Verify not already used
         assert!(option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+
+        // Verify authorized creator
+        assert!(tx_context::sender(ctx) == hash_info.authorized_creator, E_UNAUTHORIZED_CREATOR);
         
         HashClaim { document_hash }
     }
@@ -351,6 +362,11 @@ module nplex::registry {
         info.approved_timestamp
     }
 
+    /// Accessor for HashInfo.authorized_creator
+    public fun hash_authorized_creator(info: &HashInfo): address {
+        info.authorized_creator
+    }
+
     /// Get ALL registered hash info (View Function UI/debugging)
     /// Iterates through the stored keys and returns the full list of info structs
     public fun get_all_hashes_info(registry: &NPLEXRegistry): vector<HashInfo> {
@@ -376,5 +392,10 @@ module nplex::registry {
     #[test_only]
     public fun is_transfer_authorized(registry: &NPLEXRegistry, package_id: ID): bool {
         table::contains(&registry.authorized_transfers, package_id)
+    }
+
+    #[test_only]
+    public fun burn_hash_claim(claim: HashClaim) {
+        let HashClaim { document_hash: _ } = claim;
     }
 }

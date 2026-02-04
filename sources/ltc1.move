@@ -168,7 +168,7 @@ module nplex::ltc1 {
         assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
 
         // 2. Claim hash
-        let claim = registry::claim_hash(registry, document_hash);
+        let claim = registry::claim_hash(registry, document_hash, ctx);
 
         // 3. Create UIDs first to get IDs (Resolves circular dependency)
         let package_uid = iota::object::new(ctx);

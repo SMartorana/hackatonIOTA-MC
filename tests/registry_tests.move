@@ -42,7 +42,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, test_scenario::ctx(scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(scenario));
             // Authorize TestWitness
             registry::add_executor<TestWitness>(&mut registry, &admin_cap);
             
@@ -56,7 +56,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             
-            registry::register_hash(&mut registry, &admin_cap, Revoked_hash, test_scenario::ctx(scenario));
+            registry::register_hash(&mut registry, &admin_cap, Revoked_hash, ADMIN, test_scenario::ctx(scenario));
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
@@ -106,7 +106,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(&mut scenario));
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -119,7 +119,7 @@ module nplex::registry_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
             // This should abort with E_HASH_ALREADY_USED
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(&mut scenario));
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -187,7 +187,7 @@ module nplex::registry_tests {
             
             let document_hash: u256 = 4;
             
-            registry::register_hash(&mut registry, &admin_cap, document_hash, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, document_hash, ADMIN, test_scenario::ctx(&mut scenario));
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -271,7 +271,7 @@ module nplex::registry_tests {
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_hash(&mut registry, Verified_hash);
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -285,7 +285,7 @@ module nplex::registry_tests {
             let id2 = object::id_from_address(@0x101);
             
             // This should abort with E_HASH_ALREADY_USED
-            let claim = registry::claim_hash(&mut registry, Verified_hash);
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -309,7 +309,7 @@ module nplex::registry_tests {
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_hash(&mut registry, Verified_hash);
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -323,7 +323,7 @@ module nplex::registry_tests {
             let id2 = object::id_from_address(@0x102);
             
             // This should abort with E_HASH_ALREADY_USED
-            let claim = registry::claim_hash(&mut registry, Verified_hash);
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -347,7 +347,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x103);
             
             // This should abort with E_HASH_NOT_APPROVED
-            let claim = registry::claim_hash(&mut registry, Unverified_hash);
+            let claim = registry::claim_hash(&mut registry, Unverified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -370,7 +370,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x104);
             
             // This should abort with E_HASH_REVOKED
-            let claim = registry::claim_hash(&mut registry, Revoked_hash);
+            let claim = registry::claim_hash(&mut registry, Revoked_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -393,7 +393,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x105);
             
             // This should fail because UnauthorizedWitness is not in the table
-            let claim = registry::claim_hash(&mut registry, Verified_hash);
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, UnauthorizedWitness {});
             
             test_scenario::return_shared(registry);
@@ -505,4 +505,82 @@ module nplex::registry_tests {
         
         test_scenario::end(scenario);
     }
+    #[test]
+    fun test_claim_hash_authorized_success() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // 0. Initialize
+        {
+            registry::init_for_testing(test_scenario::ctx(&mut scenario));
+        };
+
+        // 1. Register hash with authorized creator (ALICE)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, test_scenario::ctx(&mut scenario));
+            // Authorize TestWitness
+            registry::add_executor<TestWitness>(&mut registry, &admin_cap);
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. ALICE claims the hash (Success)
+        test_scenario::next_tx(&mut scenario, ALICE);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let id = object::id_from_address(@0x106);
+            
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            registry::bind_executor(&mut registry, claim, id, TestWitness {});
+            
+            assert!(registry::is_hash_used(&registry, Verified_hash), 0);
+
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_CREATOR)]
+    fun test_claim_hash_unauthorized_fail() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // 0. Initialize
+        {
+            registry::init_for_testing(test_scenario::ctx(&mut scenario));
+        };
+
+        // 1. Register hash with authorized creator (ALICE)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, test_scenario::ctx(&mut scenario));
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. BOB tries to claim the hash (Fail)
+        test_scenario::next_tx(&mut scenario, BOB);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            
+            // This should abort with E_UNAUTHORIZED_CREATOR
+            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            
+            // Should not reach here
+            registry::burn_hash_claim(claim);
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
 }
