@@ -71,6 +71,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -258,6 +259,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -338,6 +340,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -391,6 +394,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -424,6 +428,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -509,6 +514,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -595,6 +601,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -812,6 +819,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 100, // TOO LOW (Min is 1B)
                 TOKEN_PRICE,
@@ -843,6 +851,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
@@ -876,6 +885,7 @@ module nplex::ltc1_tests {
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
+                string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,

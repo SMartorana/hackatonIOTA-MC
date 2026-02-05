@@ -126,9 +126,10 @@ If the Bond holder never recovers any debts:
 - NPLEX may initiate legal action
 
 ### 4. Metadata & Documentation
+- **Name**: Name of the NPL package
 - **Document Hash**: SHA-256 of NPL package ZIP (immutable)
 - **Metadata URI**: IPFS/HTTPS link to documents
-- **On-chain**: Minimal metadata to save gas
+- **On-chain**: Minimal metadata to save gas (Will change overtime due to compliance which is not yet defined)
 
 ## Contract Termination
 

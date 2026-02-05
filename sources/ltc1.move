@@ -61,6 +61,7 @@ module nplex::ltc1 {
     /// Contains the state, pools, and metadata visible to everyone.
     public struct LTC1Package<phantom T> has key {
         id: iota::object::UID,
+        name: String,
         document_hash: u256,
         
         // Supply & Pricing
@@ -150,6 +151,7 @@ module nplex::ltc1 {
 
     public entry fun create_contract<T>(
         registry: &mut NPLEXRegistry,
+        name: String,
         document_hash: u256,
         total_supply: u64,
         token_price: u64,
@@ -183,6 +185,7 @@ module nplex::ltc1 {
         // 4. Create the Package (Shared Object)
         let package = LTC1Package<T> {
             id: package_uid,
+            name,
             document_hash,
             total_supply,
             max_sellable_supply,
