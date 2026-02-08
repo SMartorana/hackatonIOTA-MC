@@ -7,6 +7,7 @@
 module nplex::registry_tests {
     use nplex::registry::{Self, NPLEXRegistry, NPLEXAdminCap};
     use iota::test_scenario;
+    use iota::clock;
 
     // Test addresses
     #[allow(unused_const)]
@@ -41,11 +42,13 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(scenario));
             // Authorize TestWitness
             registry::add_executor<TestWitness>(&mut registry, &admin_cap);
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
         };
@@ -55,9 +58,11 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Revoked_hash, ADMIN, test_scenario::ctx(scenario));
+            registry::register_hash(&mut registry, &admin_cap, Revoked_hash, ADMIN, &clock, test_scenario::ctx(scenario));
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
         };
@@ -105,9 +110,11 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -117,10 +124,12 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
             // This should abort with E_HASH_ALREADY_USED
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -184,11 +193,13 @@ module nplex::registry_tests {
             
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
             let document_hash: u256 = 4;
             
-            registry::register_hash(&mut registry, &admin_cap, document_hash, ADMIN, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, document_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -519,11 +530,13 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
             // Authorize TestWitness
             registry::add_executor<TestWitness>(&mut registry, &admin_cap);
 
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -560,9 +573,11 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, test_scenario::ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
             
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };

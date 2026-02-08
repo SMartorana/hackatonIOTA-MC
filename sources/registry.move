@@ -11,6 +11,7 @@ module nplex::registry {
     use iota::display;
     use iota::dynamic_field as df;
     use iota::package;
+    use iota::clock::{Self, Clock};
 
     // ==================== Error Codes ====================
 
@@ -141,13 +142,14 @@ module nplex::registry {
         registry: &mut NPLEXRegistry,
         _admin_cap: &NPLEXAdminCap,
         document_hash: u256,
-        authorized_creator: address, 
+        authorized_creator: address,
+        clock: &Clock,
         ctx: &TxContext
     ) {
         assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
         
         let hash_info = HashInfo {
-            approved_timestamp: tx_context::epoch(ctx),
+            approved_timestamp: clock::timestamp_ms(clock),
             auditor: tx_context::sender(ctx),
             is_revoked: false,
             contract_id: option::none(),

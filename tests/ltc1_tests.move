@@ -37,10 +37,12 @@ module nplex::ltc1_tests {
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+        let clock = clock::create_for_testing(ctx(scenario));
 
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(scenario));
+        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(scenario));
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
+        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }
@@ -378,11 +380,12 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
 
             // ONLY Register Hash
-            // ONLY Register Hash
-            registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(&mut scenario));
+            registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
 
+            clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -990,10 +993,12 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        let clock = clock::create_for_testing(ctx(&mut scenario));
         
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(&mut scenario));
+        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap); // Authorize LTC1
         
+        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(&scenario, admin_cap);
 
@@ -1042,10 +1047,12 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        let clock = clock::create_for_testing(ctx(&mut scenario));
         
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(&mut scenario));
+        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
         
+        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(&scenario, admin_cap);
 
