@@ -979,4 +979,106 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+    #[test]
+    fun test_update_authorized_creator() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // 1. Initial Setup: Register Hash with OWNER (A1)
+        next_tx(&mut scenario, ADMIN);
+        registry::init_for_testing(ctx(&mut scenario));
+        
+        next_tx(&mut scenario, ADMIN);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        
+        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(&mut scenario));
+        registry::add_executor<LTC1Witness>(&mut registry, &admin_cap); // Authorize LTC1
+        
+        test_scenario::return_shared(registry);
+        test_scenario::return_to_sender(&scenario, admin_cap);
+
+        // 2. Update Authorized Creator to NEW_OWNER (A2)
+        next_tx(&mut scenario, ADMIN);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        
+        registry::update_authorized_creator(&mut registry, &admin_cap, DOCUMENT_HASH, NEW_OWNER);
+        
+        test_scenario::return_shared(registry);
+        test_scenario::return_to_sender(&scenario, admin_cap);
+
+        // 3. T1: NEW_OWNER (A2) creates contract -> Success
+        next_tx(&mut scenario, NEW_OWNER);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let clock = clock::create_for_testing(ctx(&mut scenario));
+        
+        ltc1::create_contract<IOTA>(
+            &mut registry,
+            string::utf8(b"LTC1 Package"),
+            DOCUMENT_HASH,
+            TOTAL_SUPPLY,
+            TOKEN_PRICE,
+            NOMINAL_VALUE,
+            SPLIT_BPS,
+            string::utf8(b"ipfs://metadata"),
+            &clock,
+            ctx(&mut scenario)
+        );
+        
+        clock::destroy_for_testing(clock);
+        test_scenario::return_shared(registry);
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_CREATOR)]
+    fun test_update_authorized_creator_failure_old_owner() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // 1. Initial Setup: Register Hash with OWNER (A1)
+        next_tx(&mut scenario, ADMIN);
+        registry::init_for_testing(ctx(&mut scenario));
+        
+        next_tx(&mut scenario, ADMIN);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        
+        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, ctx(&mut scenario));
+        registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+        
+        test_scenario::return_shared(registry);
+        test_scenario::return_to_sender(&scenario, admin_cap);
+
+        // 2. Update Authorized Creator to NEW_OWNER (A2)
+        next_tx(&mut scenario, ADMIN);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+        
+        registry::update_authorized_creator(&mut registry, &admin_cap, DOCUMENT_HASH, NEW_OWNER);
+        
+        test_scenario::return_shared(registry);
+        test_scenario::return_to_sender(&scenario, admin_cap);
+
+        // 3. T2: OWNER (A1) tries to create contract -> Error
+        next_tx(&mut scenario, OWNER);
+        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+        let clock = clock::create_for_testing(ctx(&mut scenario));
+        
+        ltc1::create_contract<IOTA>(
+            &mut registry,
+            string::utf8(b"LTC1 Package"),
+            DOCUMENT_HASH,
+            TOTAL_SUPPLY,
+            TOKEN_PRICE,
+            NOMINAL_VALUE,
+            SPLIT_BPS,
+            string::utf8(b"ipfs://metadata"),
+            &clock,
+            ctx(&mut scenario)
+        );
+        
+        clock::destroy_for_testing(clock);
+        test_scenario::return_shared(registry);
+        test_scenario::end(scenario);
+    }
 }

@@ -158,6 +158,21 @@ module nplex::registry {
         vector::push_back(&mut registry.registered_hash_keys, document_hash);
     }
 
+    /// Update the authorized creator for a registered hash
+    /// Invariant: only callable by NPLEX admin and hash must have been registered before and not used yet
+    public entry fun update_authorized_creator(
+        registry: &mut NPLEXRegistry,
+        _admin_cap: &NPLEXAdminCap,
+        document_hash: u256,
+        new_creator: address
+    ) {
+        assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
+        let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+        assert!(option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+        
+        hash_info.authorized_creator = new_creator;
+    }
+
     /// Revoke a previously approved hash (emergency use)
     /// This prevents new operations on LTC1 contracts with this hash
     /// Invariant: only callable by NPLEX admin and hash must have been registered before
