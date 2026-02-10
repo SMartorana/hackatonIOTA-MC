@@ -2,12 +2,15 @@
 /// NPLEX LTC1 - Manages the creation of LTC1 contracts
 /// 
 /// This contract provides the logic for the LTC1 contract.
+/// Investor tokens are protocol-level fungible coins (Coin<T>).
+/// Each NPL package has its own coin type T, created via OTW.
+/// Investors exit by burning (redeeming) their Coin<T> back to the contract.
 
 module nplex::ltc1;
 
 use nplex::registry::{Self, NPLEXRegistry};
 use iota::balance::{Self, Balance};
-use iota::coin::{Coin};
+use iota::coin::{Self, Coin, TreasuryCap};
 use std::string::{Self, String};
 use iota::display;
 use iota::package;
@@ -19,8 +22,12 @@ const E_INSUFFICIENT_PAYMENT: u64 = 1002;
 const E_CONTRACT_REVOKED: u64 = 1003;
 const E_WRONG_BOND: u64 = 1004;
 const E_INVALID_SPLIT: u64 = 1005;
-const E_INVALID_TOKEN: u64 = 1006;
+// 1006 removed (E_INVALID_TOKEN no longer needed — type system enforces)
 const E_SUPPLY_TOO_LOW: u64 = 1007;
+const E_SALES_CLOSED: u64 = 1008;
+const E_SALES_OPEN: u64 = 1009;
+const E_ZERO_REDEEM: u64 = 1010;
+const E_INVALID_TREASURY: u64 = 1011;
 
 /// Max investor share in BPS (95.0000%) - 6 decimals
 const MAX_INVESTOR_BPS: u64 = 950_000;
@@ -37,30 +44,18 @@ public struct LTC1 has drop {}
 /// The LTC1 Witness for Registry Binding
 public struct LTC1Witness has drop {}
 
-/// The Investor Token
-/// Represents a share of the NPL package and revenue rights.
-public struct LTC1Token has key, store {
-    id: UID,
-    /// Number of "shares" this token represents
-    balance: u64,
-    /// Reference to parent LTC1Package
-    package_id: ID,
-    /// Total IOTA this token has already claimed
-    claimed_revenue: u64,
-}
-
 /// The Owner Bond (Admin Key)
 /// Represents ownership and control over the package.
 public struct OwnerBond has key {
     id: iota::object::UID,
     package_id: iota::object::ID,
-    /// Total revenue claimed by the owner so far
-    claimed_revenue: u64,
 }
 
 /// The LTC1 Package (Shared Object)
 /// Contains the state, pools, and metadata visible to everyone.
-public struct LTC1Package<phantom T> has key {
+/// P = Payment coin type (e.g. IOTA, EURC)
+/// T = Investor token type (user-deployed OTW coin, unique per package)
+public struct LTC1Package<phantom P, phantom T> has key {
     id: iota::object::UID,
     name: String,
     document_hash: u256,
@@ -75,12 +70,20 @@ public struct LTC1Package<phantom T> has key {
     // this is metadata, the value the originator of the security gave to this asset at creation
     nominal_value: u64,// in NANOS 1,000,000,000 = 1 iota
     
+    // Coin Management
+    /// TreasuryCap for minting/burning investor tokens (Coin<T>)
+    treasury_cap: TreasuryCap<T>,
+
     // Pools
-    funding_pool: Balance<T>,
-    revenue_pool: Balance<T>,
+    funding_pool: Balance<P>,
+    revenue_pool: Balance<P>,
     total_revenue_deposited: u64,
-    /// Revenue earned by unsold tokens (belongs to owner)
-    owner_legacy_revenue: u64,
+    /// Revenue reserved for owner (split at deposit time, reset on claim)
+    owner_claimable: u64,
+    
+    // Sales Control
+    /// Whether token sales are currently open (controlled by NPLEX admin)
+    sales_open: bool,
     
     // Metadata & Admin
     owner_bond_id: iota::object::ID,
@@ -94,7 +97,7 @@ fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
     // 1. Claim Publisher
     let publisher = package::claim(otw, ctx);
 
-    // 2. Setup Display
+    // 2. Setup Display (OwnerBond only — investor tokens get display from CoinMetadata)
     setup_display(&publisher, ctx);
 
     // 3. Cleanup & Transfer
@@ -103,7 +106,7 @@ fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
 
 #[allow(lint(share_owned))]
 fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::TxContext) {
-    // 1. Define Display for OwnerBond
+    // Define Display for OwnerBond
     let bond_keys = vector[
         string::utf8(b"name"),
         string::utf8(b"description"),
@@ -123,35 +126,18 @@ fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::Tx
     );
     display::update_version(&mut bond_display);
 
-    // 2. Define Display for LTC1Token
-    let token_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
-
-    let token_values = vector[
-        string::utf8(b"NPLEX Investor Token"),
-        string::utf8(b"Investor share for LTC1 Package {package_id}"),
-        string::utf8(b"https://api.nplex.eu/icons/token_blue.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut token_display = display::new_with_fields<LTC1Token>(
-        publisher, token_keys, token_values, ctx
-    );
-    display::update_version(&mut token_display);
-
-    // 3. Share Displays
+    // Share Display
     iota::transfer::public_share_object(bond_display);
-    iota::transfer::public_share_object(token_display);
 }
 
 // ==================== Public Functions ====================
 
-public entry fun create_contract<T>(
+/// Create a new LTC1 contract.
+/// The caller must provide a TreasuryCap<T> from their deployed coin module.
+/// This TreasuryCap is stored inside the package and used to mint/burn investor tokens.
+public entry fun create_contract<P, T>(
     registry: &mut NPLEXRegistry,
+    treasury_cap: TreasuryCap<T>,
     name: String,
     document_hash: u256,
     total_supply: u64,
@@ -162,18 +148,21 @@ public entry fun create_contract<T>(
     clock: &Clock,
     ctx: &mut iota::tx_context::TxContext
 ) {
-    let owner = iota::tx_context::sender(ctx); // Owner is the creator
+    let owner = iota::tx_context::sender(ctx);
 
-    // 0. Validate Split
+    // 0. Validate Treasury Cap has zero supply (fresh, no tokens minted yet)
+    assert!(coin::total_supply(&treasury_cap) == 0, E_INVALID_TREASURY);
+
+    // 1. Validate Split
     assert!(investor_split_bps <= MAX_INVESTOR_BPS, E_INVALID_SPLIT);
 
-    // 1. Validate Total Supply
+    // 2. Validate Total Supply
     assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
 
-    // 2. Claim hash
+    // 3. Claim hash
     let claim = registry::claim_hash(registry, document_hash, ctx);
 
-    // 3. Create UIDs first to get IDs (Resolves circular dependency)
+    // 4. Create UIDs first to get IDs (Resolves circular dependency)
     let package_uid = iota::object::new(ctx);
     let bond_uid = iota::object::new(ctx);
     
@@ -183,8 +172,8 @@ public entry fun create_contract<T>(
     // Calculate limits
     let max_sellable_supply = (((total_supply as u256) * (investor_split_bps as u256)) / (SPLIT_DENOMINATOR as u256)) as u64;
 
-    // 4. Create the Package (Shared Object)
-    let package = LTC1Package<T> {
+    // 5. Create the Package (Shared Object)
+    let package = LTC1Package<P, T> {
         id: package_uid,
         name,
         document_hash,
@@ -193,23 +182,24 @@ public entry fun create_contract<T>(
         tokens_sold: 0,
         token_price,
         nominal_value,
-        funding_pool: balance::zero<T>(),
-        revenue_pool: balance::zero<T>(),
+        treasury_cap,
+        funding_pool: balance::zero<P>(),
+        revenue_pool: balance::zero<P>(),
         total_revenue_deposited: 0,
-        owner_legacy_revenue: 0,
+        owner_claimable: 0,
+        sales_open: true,
         owner_bond_id: bond_id,
         creation_timestamp: clock::timestamp_ms(clock),
         metadata_uri,
     };
 
-    // 5. Create the Bond (Owned Object - Admin Key)
+    // 6. Create the Bond (Owned Object - Admin Key)
     let bond = OwnerBond {
         id: bond_uid,
         package_id: package_id,
-        claimed_revenue: 0,
     };
 
-    // 6. Bind hash with Witness
+    // 7. Bind hash with Witness
     registry::bind_executor(
         registry, 
         claim, 
@@ -217,75 +207,59 @@ public entry fun create_contract<T>(
         LTC1Witness {}
     );
 
-    // 7. Publish
-    // Share the package so ANYONE can find it and interact (buy tokens, view status)
+    // 8. Publish
     iota::transfer::share_object(package);
-    
-    // Send the bond ONLY to the owner (they need this to act as admin)
     iota::transfer::transfer(bond, owner);
 }
 
-/// Buy tokens from the package
+/// Buy tokens from the package.
 /// User specifies how many "shares" they want to buy (`amount`)
-/// and provides the Payment in IOTA.
-public entry fun buy_token<T>(
+/// and provides payment in the payment coin (P).
+/// Mints Coin<T> (investor token) and sends it to the buyer.
+/// Note: Sales must be open (controlled by NPLEX admin).
+public entry fun buy_token<P, T>(
     registry: &NPLEXRegistry,
-    package: &mut LTC1Package<T>,
-    mut payment: Coin<T>,
+    package: &mut LTC1Package<P, T>,
+    mut payment: Coin<P>,
     amount: u64,
     ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
 
+    // 0.5. Verify Sales are Open
+    assert!(package.sales_open, E_SALES_CLOSED);
+
     // 1. Check supply
     assert!(amount <= package.max_sellable_supply - package.tokens_sold, E_INSUFFICIENT_SUPPLY);
 
     // 2. Calculate cost
     let cost = (((amount as u256) * (package.token_price as u256)) as u64);
-    assert!(iota::coin::value(&payment) >= cost, E_INSUFFICIENT_PAYMENT);
+    assert!(coin::value(&payment) >= cost, E_INSUFFICIENT_PAYMENT);
 
     // 3. Handle Payment
-    let coin_value = iota::coin::value(&payment);
+    let coin_value = coin::value(&payment);
     let paid_balance = if (coin_value == cost) {
-        iota::coin::into_balance(payment)
+        coin::into_balance(payment)
     } else {
-        let split = iota::coin::split(&mut payment, cost, ctx);
+        let split = coin::split(&mut payment, cost, ctx);
         iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx)); // Return change
-        iota::coin::into_balance(split)
+        coin::into_balance(split)
     };
     
     balance::join(&mut package.funding_pool, paid_balance);
 
-    // 4. Calculate Claims
-    // When buying new tokens, we must prevent "buying into" past revenue.
-    // The revenue attached to these tokens *up to this point* belongs to the Owner (old owner).
-    // "Dividend Stripping" protection turned into "Back Pay" for Owner.
-    let initial_claimed = (((amount as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
-
-    // 5. Mint Token
+    // 4. Mint Investor Tokens (protocol-level Coin<T>)
     package.tokens_sold = package.tokens_sold + amount;
-    
-    let token = LTC1Token {
-        id: iota::object::new(ctx),
-        balance: amount,
-        package_id: iota::object::uid_to_inner(&package.id),
-        claimed_revenue: initial_claimed,
-    };
-
-    // 6. Credit Owner Legacy Revenue
-    // The `initial_claimed` amount is money the new buyer IS NOT entitled to.
-    // Therefore, it is money the Owner WAS entitled to (as previous owner of unsold stock).
-    package.owner_legacy_revenue = package.owner_legacy_revenue + initial_claimed;
-
-    iota::transfer::public_transfer(token, iota::tx_context::sender(ctx));
+    let investor_tokens = coin::mint(&mut package.treasury_cap, amount, ctx);
+    iota::transfer::public_transfer(investor_tokens, iota::tx_context::sender(ctx));
 }
 
 /// Withdraw Funding from the package (Owner Only)
 /// Requires the OwnerBond (Admin Capability)
-public entry fun withdraw_funding<T>(
+public entry fun withdraw_funding<P, T>(
     registry: &NPLEXRegistry,
-    package: &mut LTC1Package<T>,
+    package: &mut LTC1Package<P, T>,
     bond: &OwnerBond,
     amount: u64,
     ctx: &mut iota::tx_context::TxContext
@@ -297,17 +271,18 @@ public entry fun withdraw_funding<T>(
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
 
     // 2. Withdraw
-    let funding = iota::coin::take(&mut package.funding_pool, amount, ctx); // Aborts if amount > funding_pool.value
+    let funding = coin::take(&mut package.funding_pool, amount, ctx);
     iota::transfer::public_transfer(funding, iota::tx_context::sender(ctx));
 }
 
 /// Deposit revenue into the package (Owner Only)
 /// Requires the OwnerBond (Admin Capability)
-public entry fun deposit_revenue<T>(
+/// Revenue is split at deposit time: owner gets proportional share of unsold tokens.
+public entry fun deposit_revenue<P, T>(
     registry: &NPLEXRegistry,
-    package: &mut LTC1Package<T>,
+    package: &mut LTC1Package<P, T>,
     bond: &OwnerBond,
-    payment: Coin<T>,
+    payment: Coin<P>,
     _ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
@@ -316,22 +291,26 @@ public entry fun deposit_revenue<T>(
     // 1. Verify OwnerBond matches this package
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
 
-    // 2. Update Metadata
-    let amount = iota::coin::value(&payment);
+    // 2. Split revenue at deposit time
+    let amount = coin::value(&payment);
+    let unsold = package.total_supply - package.tokens_sold;
+    let owner_share = (((unsold as u256) * (amount as u256)) / (package.total_supply as u256) as u64);
+    package.owner_claimable = package.owner_claimable + owner_share;
+
+    // 3. Update cumulative counter
     package.total_revenue_deposited = package.total_revenue_deposited + amount;
 
-    // 3. Deposit to Revenue Pool
-    balance::join(&mut package.revenue_pool, iota::coin::into_balance(payment));
+    // 4. Deposit full amount to Revenue Pool
+    balance::join(&mut package.revenue_pool, coin::into_balance(payment));
 }
 
 /// Claim Revenue for Owner
-/// Owner is entitled to:
-/// 1. The revenue share of the currently UNSOLD tokens.
-/// 2. The "Legacy Revenue" accumulated from tokens they owned in the past but then sold.
-public entry fun claim_revenue_owner<T>(
+/// Owner claims all accumulated revenue from the owner_claimable pool.
+/// Double-claim is structurally impossible: owner_claimable resets to 0 after each claim.
+public entry fun claim_revenue_owner<P, T>(
     registry: &NPLEXRegistry,
-    package: &mut LTC1Package<T>,
-    bond: &mut OwnerBond,
+    package: &mut LTC1Package<P, T>,
+    bond: &OwnerBond,
     ctx: &mut iota::tx_context::TxContext
 ) {
     // Verify Contract Status (not revoked)
@@ -340,25 +319,17 @@ public entry fun claim_revenue_owner<T>(
     // 1. Verify Bond
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
 
-    // 2. Calculate Current Entitlement (Unsold Tokens)
-    let unsold_supply = package.total_supply - package.tokens_sold;
-    let current_share = (((unsold_supply as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
-
-    // 3. Calculate Total Entitlement (Current + Legacy)
-    let total_entitled = current_share + package.owner_legacy_revenue;
-
-    // 4. Calculate Due
-    let due = total_entitled - bond.claimed_revenue;
-    // In the rare case due is 0 (double claim), we just return.
+    // 2. Get the accumulated owner revenue
+    let due = package.owner_claimable;
     if (due == 0) {
         return
     };
 
-    // 5. Update Bond State
-    bond.claimed_revenue = bond.claimed_revenue + due;
+    // 3. Reset owner_claimable (prevents double-claim)
+    package.owner_claimable = 0;
 
-    // 6. Payout
-    let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
+    // 4. Payout
+    let payment = coin::take(&mut package.revenue_pool, due, ctx);
     iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
 }
 
@@ -371,60 +342,77 @@ public entry fun transfer_bond(
     _ctx: &mut iota::tx_context::TxContext
 ) {
     // 1. Validate and Consume Ticket from Registry
-    // This will abort if:
-    // - LTC1 is not an allowed executor (Unlikely if code is published)
-    // - Transfer is not authorized
-    // - New owner does not match
     registry::consume_transfer_ticket(registry, bond.package_id, new_owner, LTC1Witness {});
 
     // 2. Transfer Bond
     iota::transfer::transfer(bond, new_owner);
 }
 
-/// Claim Revenue for Investors
-/// Investors can claim their share of the revenue based on their token balance.
-/// Allowed even if the contract is revoked (so investors can exit).
-public entry fun claim_revenue<T>(
-    registry: &NPLEXRegistry,
-    package: &mut LTC1Package<T>,
-    token: &mut LTC1Token,
+/// Redeem (burn) investor tokens to claim proportional share of the investor revenue pool.
+/// The entire Coin<T> is consumed. For partial redemption, split the coin beforehand.
+/// This is the ONLY way for investors to extract value from the contract.
+/// Allowed even if the contract is revoked (so investors can always exit).
+/// Cross-package redemption is impossible: Coin<T> only matches LTC1Package<P, T>.
+public entry fun redeem<P, T>(
+    package: &mut LTC1Package<P, T>,
+    investor_coin: Coin<T>,
     ctx: &mut iota::tx_context::TxContext
 ) {
-    // Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    // 1. Validate
+    let amount = coin::value(&investor_coin);
+    assert!(amount > 0, E_ZERO_REDEEM);
 
-    // 1. Verify Token belongs to this package
-    assert!(token.package_id == iota::object::uid_to_inner(&package.id), E_INVALID_TOKEN);
+    // 2. Calculate payout from investor portion of pool
+    let investor_pool = balance::value(&package.revenue_pool) - package.owner_claimable;
+    let payout = (((amount as u256) * (investor_pool as u256)) / (package.tokens_sold as u256) as u64);
 
-    // 2. Calculate Entitlement
-    // Formula: (balance * total_revenue_deposited) / total_supply
-    let total_entitled = (((token.balance as u256) * (package.total_revenue_deposited as u256)) / (package.total_supply as u256) as u64);
+    // 3. Burn investor tokens (entire coin consumed)
+    coin::burn(&mut package.treasury_cap, investor_coin);
 
-    // 3. Calculate Due
-    let due = total_entitled - token.claimed_revenue;
-    if (due == 0) {
-        return
+    // 4. Update state
+    package.tokens_sold = package.tokens_sold - amount;
+    package.total_supply = package.total_supply - amount;
+
+    // 5. Pay out
+    if (payout > 0) {
+        let payment = coin::take(&mut package.revenue_pool, payout, ctx);
+        iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
     };
+}
 
-    // 4. Update Token
-    token.claimed_revenue = token.claimed_revenue + due;
+/// Toggle sales open/closed for a package.
+/// Requires prior authorization from NPLEX via Registry (same pattern as transfer_bond).
+public entry fun toggle_sales<P, T>(
+    registry: &mut NPLEXRegistry,
+    package: &mut LTC1Package<P, T>,
+) {
+    let contract_id = iota::object::uid_to_inner(&package.id);
+    let open = registry::consume_sales_toggle(registry, contract_id, LTC1Witness {});
+    package.sales_open = open;
+}
 
-    // 5. Payout
-    let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
-    iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+/// Update token price (Owner Only, requires sales to be closed)
+public entry fun set_token_price<P, T>(
+    package: &mut LTC1Package<P, T>,
+    bond: &OwnerBond,
+    new_price: u64,
+) {
+    assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
+    assert!(!package.sales_open, E_SALES_OPEN);
+    package.token_price = new_price;
 }
 
 // ==================== Accessors ====================
 
-public fun balance(token: &LTC1Token): u64 {
-    token.balance
+public fun is_sales_open<P, T>(package: &LTC1Package<P, T>): bool {
+    package.sales_open
 }
 
-public fun claimed_revenue(token: &LTC1Token): u64 {
-    token.claimed_revenue
+public fun owner_claimable<P, T>(package: &LTC1Package<P, T>): u64 {
+    package.owner_claimable
 }
 
 /// Verify if a proposed document hash matches the package's registered hash
-public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bool {
+public fun verify_document<P, T>(package: &LTC1Package<P, T>, document_hash: u256): bool {
     package.document_hash == document_hash
 }

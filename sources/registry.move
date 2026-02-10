@@ -34,6 +34,9 @@ const E_TRANSFER_NOT_AUTHORIZED: u64 = 5;
 /// Creator is not authorized for this hash
 const E_UNAUTHORIZED_CREATOR: u64 = 6;
 
+/// Sales toggle not authorized by NPLEX
+const E_SALES_TOGGLE_NOT_AUTHORIZED: u64 = 7;
+
 // ==================== Structs ====================
 /// One-Time Witness for the module
 public struct REGISTRY has drop {}
@@ -60,6 +63,8 @@ public struct NPLEXRegistry has key {
     approved_hashes: Table<u256, HashInfo>,
     /// Maps Contract ID -> Authorized New Owner Address
     authorized_transfers: Table<ID, address>,
+    /// Maps Contract ID -> Authorized Sales State (true = open, false = closed)
+    authorized_sales_toggles: Table<ID, bool>,
     /// List of registered hash keys (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
     registered_hash_keys: vector<u256>,
@@ -103,6 +108,7 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
         id: object::new(ctx),
         approved_hashes: table::new(ctx),
         authorized_transfers: table::new(ctx),
+        authorized_sales_toggles: table::new(ctx),
         registered_hash_keys: vector::empty(),
     };
     transfer::share_object(registry);
@@ -310,6 +316,40 @@ public fun consume_transfer_ticket<T: drop>(
     table::remove(&mut registry.authorized_transfers, contract_id);
 }
 
+/// Authorize a Sales Toggle for a specific contract
+/// Admin specifies the desired sales state (true = open, false = closed)
+public entry fun authorize_sales_toggle(
+    registry: &mut NPLEXRegistry,
+    _admin_cap: &NPLEXAdminCap,
+    contract_id: ID,
+    open: bool
+) {
+    if (table::contains(&registry.authorized_sales_toggles, contract_id)) {
+        table::remove(&mut registry.authorized_sales_toggles, contract_id);
+    };
+    table::add(&mut registry.authorized_sales_toggles, contract_id, open);
+}
+
+/// Consume a sales toggle ticket
+/// Validates that the Caller (via Witness) is authorized and the toggle is approved by NPLEX
+/// Returns the authorized sales state
+public fun consume_sales_toggle<T: drop>(
+    registry: &mut NPLEXRegistry,
+    contract_id: ID,
+    _witness: T
+): bool {
+    // 1. Verify Witness (Caller) is an allowed executor
+    assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
+
+    // 2. Verify Toggle is Authorized
+    assert!(table::contains(&registry.authorized_sales_toggles, contract_id), E_SALES_TOGGLE_NOT_AUTHORIZED);
+
+    // 3. Read and Consume Ticket
+    let open = *table::borrow(&registry.authorized_sales_toggles, contract_id);
+    table::remove(&mut registry.authorized_sales_toggles, contract_id);
+    open
+}
+
 // ==================== Idempotent Functions ====================
 
 /// Check if a hash is approved and not revoked
@@ -411,6 +451,11 @@ public fun init_for_testing(ctx: &mut TxContext) {
 #[test_only]
 public fun is_transfer_authorized(registry: &NPLEXRegistry, package_id: ID): bool {
     table::contains(&registry.authorized_transfers, package_id)
+}
+
+#[test_only]
+public fun is_sales_toggle_authorized(registry: &NPLEXRegistry, package_id: ID): bool {
+    table::contains(&registry.authorized_sales_toggles, package_id)
 }
 
 #[test_only]
