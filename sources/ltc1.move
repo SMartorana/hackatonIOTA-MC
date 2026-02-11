@@ -25,7 +25,7 @@ const E_INVALID_SPLIT: u64 = 1005;
 // 1006 removed (E_INVALID_TOKEN no longer needed — type system enforces)
 const E_SUPPLY_TOO_LOW: u64 = 1007;
 const E_SALES_CLOSED: u64 = 1008;
-const E_SALES_OPEN: u64 = 1009;
+// 1009 removed (E_SALES_OPEN no longer needed — set_token_price removed)
 const E_ZERO_REDEEM: u64 = 1010;
 const E_INVALID_TREASURY: u64 = 1011;
 
@@ -33,8 +33,8 @@ const E_INVALID_TREASURY: u64 = 1011;
 const MAX_INVESTOR_BPS: u64 = 950_000;
 const SPLIT_DENOMINATOR: u64 = 1_000_000;
 
-/// Min total supply (decrease the dust due to divisions rounding)
-const MIN_SUPPLY: u64 = 1_000_000_000;
+/// Min total shares (decrease the dust due to divisions rounding)
+const MIN_TOTAL_SHARES: u64 = 1_000_000_000;
 
 // ==================== Structs ====================
 
@@ -61,9 +61,11 @@ public struct LTC1Package<phantom P, phantom T> has key {
     document_hash: u256,
     
     // Supply & Pricing
-    total_supply: u64,
+    /// Immutable — total conceptual shares of the NPL security (never changes after creation)
+    total_shares: u64,
     /// Maximum supply that can be sold to investors
     max_sellable_supply: u64,
+    /// Currently minted tokens held by investors (increases on buy, decreases on redeem)
     tokens_sold: u64,
     token_price: u64,// in NANOS 1,000,000,000 = 1 iota
 
@@ -140,7 +142,7 @@ public entry fun create_contract<P, T>(
     treasury_cap: TreasuryCap<T>,
     name: String,
     document_hash: u256,
-    total_supply: u64,
+    total_shares: u64,
     token_price: u64,
     nominal_value: u64,
     investor_split_bps: u64,
@@ -156,8 +158,8 @@ public entry fun create_contract<P, T>(
     // 1. Validate Split
     assert!(investor_split_bps <= MAX_INVESTOR_BPS, E_INVALID_SPLIT);
 
-    // 2. Validate Total Supply
-    assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
+    // 2. Validate Total Shares
+    assert!(total_shares >= MIN_TOTAL_SHARES, E_SUPPLY_TOO_LOW);
 
     // 3. Claim hash
     let claim = registry::claim_hash(registry, document_hash, ctx);
@@ -170,14 +172,14 @@ public entry fun create_contract<P, T>(
     let bond_id = iota::object::uid_to_inner(&bond_uid);
 
     // Calculate limits
-    let max_sellable_supply = (((total_supply as u256) * (investor_split_bps as u256)) / (SPLIT_DENOMINATOR as u256)) as u64;
+    let max_sellable_supply = (((total_shares as u256) * (investor_split_bps as u256)) / (SPLIT_DENOMINATOR as u256)) as u64;
 
     // 5. Create the Package (Shared Object)
     let package = LTC1Package<P, T> {
         id: package_uid,
         name,
         document_hash,
-        total_supply,
+        total_shares,
         max_sellable_supply,
         tokens_sold: 0,
         token_price,
@@ -293,8 +295,8 @@ public entry fun deposit_revenue<P, T>(
 
     // 2. Split revenue at deposit time
     let amount = coin::value(&payment);
-    let unsold = package.total_supply - package.tokens_sold;
-    let owner_share = (((unsold as u256) * (amount as u256)) / (package.total_supply as u256) as u64);
+    let unsold = package.total_shares - package.tokens_sold;
+    let owner_share = (((unsold as u256) * (amount as u256)) / (package.total_shares as u256) as u64);
     package.owner_claimable = package.owner_claimable + owner_share;
 
     // 3. Update cumulative counter
@@ -371,7 +373,6 @@ public entry fun redeem<P, T>(
 
     // 4. Update state
     package.tokens_sold = package.tokens_sold - amount;
-    package.total_supply = package.total_supply - amount;
 
     // 5. Pay out
     if (payout > 0) {
@@ -380,26 +381,19 @@ public entry fun redeem<P, T>(
     };
 }
 
-/// Toggle sales open/closed for a package.
-/// Requires prior authorization from NPLEX via Registry (same pattern as transfer_bond).
-public entry fun toggle_sales<P, T>(
+/// Close sales permanently for a package. One-way — cannot be reopened.
+/// Requires prior authorization from NPLEX via Registry.
+/// Only the address authorized by NPLEX can execute this.
+public entry fun close_sales<P, T>(
     registry: &mut NPLEXRegistry,
     package: &mut LTC1Package<P, T>,
+    ctx: &mut iota::tx_context::TxContext
 ) {
+    assert!(package.sales_open, E_SALES_CLOSED);
     let contract_id = iota::object::uid_to_inner(&package.id);
-    let open = registry::consume_sales_toggle(registry, contract_id, LTC1Witness {});
-    package.sales_open = open;
-}
-
-/// Update token price (Owner Only, requires sales to be closed)
-public entry fun set_token_price<P, T>(
-    package: &mut LTC1Package<P, T>,
-    bond: &OwnerBond,
-    new_price: u64,
-) {
-    assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
-    assert!(!package.sales_open, E_SALES_OPEN);
-    package.token_price = new_price;
+    let toggler = iota::tx_context::sender(ctx);
+    registry::consume_sales_toggle_ticket(registry, contract_id, toggler, LTC1Witness {});
+    package.sales_open = false;
 }
 
 // ==================== Accessors ====================

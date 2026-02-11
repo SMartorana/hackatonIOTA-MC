@@ -55,6 +55,7 @@ public struct NPLEXAdminCap has key, store {
 /// Key for Authorized Executors (Dynamic Field)
 public struct ExecutorKey<phantom T> has copy, drop, store {}
 
+
 /// Central registry of approved NPL package hashes
 /// Shared object - anyone can read, only admin can mutate
 public struct NPLEXRegistry has key {
@@ -63,10 +64,11 @@ public struct NPLEXRegistry has key {
     approved_hashes: Table<u256, HashInfo>,
     /// Maps Contract ID -> Authorized New Owner Address
     authorized_transfers: Table<ID, address>,
-    /// Maps Contract ID -> Authorized Sales State (true = open, false = closed)
-    authorized_sales_toggles: Table<ID, bool>,
+    /// Maps Contract ID -> Authorized Toggler Address
+    authorized_sales_toggles: Table<ID, address>,
     /// List of registered hash keys (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
+    /// This will be removed eventually and the registered hash keys will be stored somewhere off chain
     registered_hash_keys: vector<u256>,
     // Dynamic Fields are used for allowed_executors
     // Key: ExecutorKey<T> -> Value: bool (true)
@@ -317,37 +319,39 @@ public fun consume_transfer_ticket<T: drop>(
 }
 
 /// Authorize a Sales Toggle for a specific contract
-/// Admin specifies the desired sales state (true = open, false = closed)
+/// Admin specifies who is authorized to toggle sales
 public entry fun authorize_sales_toggle(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     contract_id: ID,
-    open: bool
+    authorized_toggler: address
 ) {
     if (table::contains(&registry.authorized_sales_toggles, contract_id)) {
         table::remove(&mut registry.authorized_sales_toggles, contract_id);
     };
-    table::add(&mut registry.authorized_sales_toggles, contract_id, open);
+    table::add(&mut registry.authorized_sales_toggles, contract_id, authorized_toggler);
 }
 
 /// Consume a sales toggle ticket
-/// Validates that the Caller (via Witness) is authorized and the toggle is approved by NPLEX
-/// Returns the authorized sales state
-public fun consume_sales_toggle<T: drop>(
+/// Validates that the Caller (via Witness) is authorized and the toggler matches the authorized address
+public fun consume_sales_toggle_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
     contract_id: ID,
+    toggler: address,
     _witness: T
-): bool {
+) {
     // 1. Verify Witness (Caller) is an allowed executor
     assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
 
     // 2. Verify Toggle is Authorized
     assert!(table::contains(&registry.authorized_sales_toggles, contract_id), E_SALES_TOGGLE_NOT_AUTHORIZED);
 
-    // 3. Read and Consume Ticket
-    let open = *table::borrow(&registry.authorized_sales_toggles, contract_id);
+    // 3. Verify Toggler matches
+    let authorized_toggler = *table::borrow(&registry.authorized_sales_toggles, contract_id);
+    assert!(authorized_toggler == toggler, E_SALES_TOGGLE_NOT_AUTHORIZED);
+
+    // 4. Consume Ticket
     table::remove(&mut registry.authorized_sales_toggles, contract_id);
-    open
 }
 
 // ==================== Idempotent Functions ====================

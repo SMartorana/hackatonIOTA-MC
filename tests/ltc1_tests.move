@@ -550,8 +550,8 @@ module nplex::ltc1_tests {
         };
 
         // 6. Revenue 2: NEW_OWNER deposits another 1M NANOS
-        // After investor redeemed: total_supply = 999,999,900, tokens_sold = 0
-        // owner_share = (999,999,900 - 0)/999,999,900 * 1M = 1,000,000
+        // After investor redeemed: total_shares = 1,000,000,000 (immutable), tokens_sold = 0
+        // owner_share = (1,000,000,000 - 0)/1,000,000,000 * 1M = 1,000,000
         let revenue_amount_2 = 1_000_000;
         next_tx(&mut scenario, NEW_OWNER);
         {
@@ -831,7 +831,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, false);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, ADMIN);
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -842,7 +842,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
             
-            ltc1::toggle_sales<IOTA, TEST_TOKEN>(&mut registry, &mut package);
+            ltc1::close_sales<IOTA, TEST_TOKEN>(&mut registry, &mut package, ctx(&mut scenario));
             assert!(!ltc1::is_sales_open(&package), 0);
 
             test_scenario::return_shared(registry);
@@ -865,106 +865,7 @@ module nplex::ltc1_tests {
         test_scenario::end(scenario);
     }
 
-    // Test: Set token price
-    #[test]
-    fun test_set_token_price() {
-        let mut scenario = test_scenario::begin(ADMIN);
-        setup_registry(&mut scenario);
-        let package_id = create_default_contract(&mut scenario);
 
-        // 1. Close sales (Admin authorizes + consume)
-        next_tx(&mut scenario, ADMIN);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, false);
-            test_scenario::return_shared(registry);
-            test_scenario::return_to_sender(&scenario, admin_cap);
-        };
-
-        next_tx(&mut scenario, ADMIN);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA, TEST_TOKEN>(&mut registry, &mut package);
-            test_scenario::return_shared(registry);
-            test_scenario::return_shared(package);
-        };
-
-        // 2. Set new price
-        let new_price = 2_000;
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
-            ltc1::set_token_price<IOTA, TEST_TOKEN>(&mut package, &bond, new_price);
-            test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
-        };
-
-        // 3. Reopen sales (Admin authorizes + consume)
-        next_tx(&mut scenario, ADMIN);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, true);
-            test_scenario::return_shared(registry);
-            test_scenario::return_to_sender(&scenario, admin_cap);
-        };
-
-        next_tx(&mut scenario, ADMIN);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA, TEST_TOKEN>(&mut registry, &mut package);
-            test_scenario::return_shared(registry);
-            test_scenario::return_shared(package);
-        };
-
-        // 4. Buy at new price
-        let buy_amount = 100_000;
-        let new_cost = buy_amount * new_price;
-        next_tx(&mut scenario, INVESTOR);
-        {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
-            let payment = mint_coins(new_cost, &mut scenario);
-
-            ltc1::buy_token<IOTA, TEST_TOKEN>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
-
-            test_scenario::return_shared(registry);
-            test_scenario::return_shared(package);
-        };
-
-        next_tx(&mut scenario, INVESTOR);
-        {
-            let token = test_scenario::take_from_sender<Coin<TEST_TOKEN>>(&scenario);
-            assert!(coin::value(&token) == 100_000, 0);
-            test_scenario::return_to_sender(&scenario, token);
-        };
-
-        test_scenario::end(scenario);
-    }
-
-    // Test: Cannot set price while sales are open
-    #[test]
-    #[expected_failure(abort_code = ltc1::E_SALES_OPEN)]
-    fun test_set_token_price_fails_when_sales_open() {
-        let mut scenario = test_scenario::begin(ADMIN);
-        setup_registry(&mut scenario);
-        let package_id = create_default_contract(&mut scenario);
-
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA, TEST_TOKEN>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
-            ltc1::set_token_price<IOTA, TEST_TOKEN>(&mut package, &bond, 2_000);
-            test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
-        };
-
-        test_scenario::end(scenario);
-    }
 
     // Test: update_authorized_creator
     #[test]
