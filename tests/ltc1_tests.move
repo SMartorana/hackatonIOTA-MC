@@ -51,6 +51,28 @@ module nplex::ltc1_tests {
         coin::mint_for_testing<IOTA>(amount, ctx(scenario))
     }
 
+    /// Helper: Admin authorizes + executes sales open for a package
+    fun open_sales(scenario: &mut Scenario, package_id: ID) {
+        // Admin authorizes
+        next_tx(scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, true);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(scenario, admin_cap);
+        };
+        // Execute toggle
+        next_tx(scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(scenario, package_id);
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+    }
+
     // ==================== Tests ====================
 
     // Test end to end flow
@@ -97,6 +119,9 @@ module nplex::ltc1_tests {
             test_scenario::return_shared(registry);
             id
         };
+
+        // 1.6 Open Sales
+        open_sales(&mut scenario, package_id);
 
         // 2. Buy Tokens (Investor)
         // Total Supply: 1,000,000,000
@@ -285,6 +310,9 @@ module nplex::ltc1_tests {
             test_scenario::return_shared(registry);
             id
         };
+
+        // 1.6 Open Sales
+        open_sales(&mut scenario, package_id);
 
         // 2. Buy More Than Allowed (Investor)
         // Try to buy 500_000_001 tokens (Limit is 500_000_000)
@@ -542,6 +570,9 @@ module nplex::ltc1_tests {
             id
         };
 
+        // 1.6 Open Sales
+        open_sales(&mut scenario, package_id);
+
         // 2. Buy Tokens (Investor) -> Funds the pool
         let buy_amount = 100_000;
         let cost = buy_amount * TOKEN_PRICE; 
@@ -628,6 +659,9 @@ module nplex::ltc1_tests {
             test_scenario::return_shared(registry);
             id
         };
+
+        // 1.6 Open Sales
+        open_sales(&mut scenario, package_id);
 
         // 2. Funding: Investor buys 100k tokens
         // Cost: 100,000 * 1,000 = 100,000,000 NANOS (0.1 IOTA)
@@ -912,6 +946,9 @@ module nplex::ltc1_tests {
             id
         };
 
+        // 1.6 Open Sales
+        open_sales(&mut scenario, package_id);
+
         // 2. Buy & Deposit Revenue
         let buy_amount = 100_000;
         let revenue_amount = 1_000_000;
@@ -1086,6 +1123,301 @@ module nplex::ltc1_tests {
         
         clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
+        test_scenario::end(scenario);
+    }
+
+    // ==================== Sales Toggle Tests ====================
+
+    // Test: Close Sales Blocks Buying
+    // Scenario: Admin closes sales. Investor tries to buy tokens.
+    // Expected: Abort with E_SALES_CLOSED.
+    #[test]
+    #[expected_failure(abort_code = ltc1::E_SALES_CLOSED)]
+    fun test_close_sales_blocks_buying() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        // 1. Create Contract
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(&mut scenario)
+            );
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
+
+        // 2. Get Package ID
+        next_tx(&mut scenario, ADMIN);
+        let package_id = {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
+            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
+            test_scenario::return_shared(registry);
+            id
+        };
+
+        // 3. Admin authorizes close sales
+        next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, false);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 4. Execute toggle
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 5. Investor tries to buy (Should Fail)
+        let buy_amount = 100_000;
+        let cost = buy_amount * TOKEN_PRICE;
+        
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost, &mut scenario);
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        test_scenario::end(scenario);
+    }
+
+    // Test: Reopen Sales Allows Buying
+    // Scenario: Admin closes sales, then reopens them. Investor buys successfully.
+    #[test]
+    fun test_reopen_sales_allows_buying() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        // 1. Create Contract
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(&mut scenario)
+            );
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
+
+        // 2. Get Package ID
+        next_tx(&mut scenario, ADMIN);
+        let package_id = {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
+            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
+            test_scenario::return_shared(registry);
+            id
+        };
+
+        // 3. Admin closes sales
+        next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, false);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 4. Admin reopens sales
+        next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, true);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 5. Investor buys (Should Succeed)
+        let buy_amount = 100_000;
+        let cost = buy_amount * TOKEN_PRICE;
+        
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost, &mut scenario);
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 6. Verify token received
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+            assert!(ltc1::balance(&token) == 100_000, 0);
+            test_scenario::return_to_sender(&scenario, token);
+        };
+
+        test_scenario::end(scenario);
+    }
+
+    // Test: Close Sales Does NOT Block Revenue Claims
+    // Scenario: Investor buys tokens, sales are closed, owner deposits revenue,
+    // investor can still claim revenue.
+    #[test]
+    fun test_close_sales_does_not_block_claims() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        setup_registry(&mut scenario);
+
+        // 1. Create Contract
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                DOCUMENT_HASH,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(&mut scenario)
+            );
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
+
+        // 2. Get Package ID
+        next_tx(&mut scenario, ADMIN);
+        let package_id = {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
+            let contract_id_opt = registry::hash_contract_id(&info);
+            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
+            test_scenario::return_shared(registry);
+            id
+        };
+
+        // 2.5 Open Sales first
+        open_sales(&mut scenario, package_id);
+
+        // 3. Investor buys tokens BEFORE close
+        let buy_amount = 100_000;
+        let cost = buy_amount * TOKEN_PRICE;
+        
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let payment = mint_coins(cost, &mut scenario);
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 4. Admin closes sales
+        next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, package_id, false);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        next_tx(&mut scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+        };
+
+        // 5. Owner deposits revenue (should work even with sales closed)
+        let revenue_amount = 1_000_000;
+        next_tx(&mut scenario, OWNER);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let payment = mint_coins(revenue_amount, &mut scenario);
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, bond);
+        };
+
+        // 6. Investor claims revenue (should work even with sales closed)
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
+            test_scenario::return_to_sender(&scenario, token);
+        };
+
+        // 7. Verify Investor received revenue (100 NANOS)
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let cash = test_scenario::take_from_sender<Coin<IOTA>>(&scenario);
+            assert!(iota::coin::value(&cash) == 100, 1);
+            test_scenario::return_to_sender(&scenario, cash);
+        };
+
         test_scenario::end(scenario);
     }
 }

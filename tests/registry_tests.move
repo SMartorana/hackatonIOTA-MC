@@ -598,4 +598,77 @@ module nplex::registry_tests {
         test_scenario::end(scenario);
     }
 
+    // Sales Toggle Tests
+    #[test]
+    fun test_authorize_and_consume_sales_toggle() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        
+        // Use fixture
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        let contract_id = object::id_from_address(@0x200);
+
+        // 1. Authorize Sales Toggle (Admin) -> close sales
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false);
+            
+            // Assert: Ticket Created
+            assert!(registry::is_sales_toggle_authorized(&registry, contract_id), 1);
+            
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. Consume Ticket (Executor)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            
+            let new_state = registry::consume_sales_toggle_ticket(&mut registry, contract_id, TestWitness {});
+            
+            // Assert: state is false (closed)
+            assert!(new_state == false, 2);
+            
+            // Assert: Ticket Consumed
+            assert!(!registry::is_sales_toggle_authorized(&registry, contract_id), 3);
+            
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_EXECUTOR)]
+    fun test_unauthorized_executor_cannot_consume_sales_toggle() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        fixture_init_registry_and_setup_hashes(&mut scenario);
+        
+        let contract_id = object::id_from_address(@0x200);
+
+        // 1. Authorize
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 2. Try to consume with UnauthorizedWitness (Fail)
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let _state = registry::consume_sales_toggle_ticket(&mut registry, contract_id, UnauthorizedWitness {});
+            test_scenario::return_shared(registry);
+        };
+        
+        test_scenario::end(scenario);
+    }
+
 }

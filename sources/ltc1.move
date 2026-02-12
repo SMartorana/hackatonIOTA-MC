@@ -21,6 +21,7 @@ const E_WRONG_BOND: u64 = 1004;
 const E_INVALID_SPLIT: u64 = 1005;
 const E_INVALID_TOKEN: u64 = 1006;
 const E_SUPPLY_TOO_LOW: u64 = 1007;
+const E_SALES_CLOSED: u64 = 1008;
 
 /// Max investor share in BPS (95.0000%) - 6 decimals
 const MAX_INVESTOR_BPS: u64 = 950_000;
@@ -60,6 +61,7 @@ public struct OwnerBond has key {
 
 /// The LTC1 Package (Shared Object)
 /// Contains the state, pools, and metadata visible to everyone.
+/// TODO Immutable fields like name hash and total supply should be made immutable by embedding them in a different obj and using transfer::freeze_object
 public struct LTC1Package<phantom T> has key {
     id: iota::object::UID,
     name: String,
@@ -86,6 +88,8 @@ public struct LTC1Package<phantom T> has key {
     owner_bond_id: iota::object::ID,
     creation_timestamp: u64,
     metadata_uri: String,
+    /// Whether primary sales are open (controlled by NPLEX admin)
+    sales_open: bool,
 }
 
 // ==================== Initialization ====================
@@ -200,6 +204,7 @@ public entry fun create_contract<T>(
         owner_bond_id: bond_id,
         creation_timestamp: clock::timestamp_ms(clock),
         metadata_uri,
+        sales_open: false,
     };
 
     // 5. Create the Bond (Owned Object - Admin Key)
@@ -237,6 +242,9 @@ public entry fun buy_token<T>(
 ) {
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+
+    // 0.5. Verify Sales are Open
+    assert!(package.sales_open, E_SALES_CLOSED);
 
     // 1. Check supply
     assert!(amount <= package.max_sellable_supply - package.tokens_sold, E_INSUFFICIENT_SUPPLY);
@@ -381,6 +389,24 @@ public entry fun transfer_bond(
     iota::transfer::transfer(bond, new_owner);
 }
 
+/// Toggle sales state for the package
+/// Requires prior authorization from NPLEX via Registry
+public entry fun toggle_sales<T>(
+    registry: &mut NPLEXRegistry,
+    package: &mut LTC1Package<T>,
+    _ctx: &mut iota::tx_context::TxContext
+) {
+    // 1. Consume Ticket from Registry (validates executor + authorization)
+    let new_state = registry::consume_sales_toggle_ticket(
+        registry,
+        iota::object::uid_to_inner(&package.id),
+        LTC1Witness {}
+    );
+
+    // 2. Update Sales State
+    package.sales_open = new_state;
+}
+
 /// Claim Revenue for Investors
 /// Investors can claim their share of the revenue based on their token balance.
 /// Allowed even if the contract is revoked (so investors can exit).
@@ -391,6 +417,7 @@ public entry fun claim_revenue<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // Verify Contract Status (not revoked)
+    // TODO this has to be checked in the future when we have a more granular control over permissions
     assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
 
     // 1. Verify Token belongs to this package
