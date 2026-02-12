@@ -22,6 +22,8 @@ const E_INVALID_SPLIT: u64 = 1005;
 const E_INVALID_TOKEN: u64 = 1006;
 const E_SUPPLY_TOO_LOW: u64 = 1007;
 const E_SALES_CLOSED: u64 = 1008;
+const E_ZERO_AMOUNT: u64 = 1009;
+const E_INSUFFICIENT_BALANCE: u64 = 1010;
 
 /// Max investor share in BPS (95.0000%) - 6 decimals
 const MAX_INVESTOR_BPS: u64 = 950_000;
@@ -451,7 +453,55 @@ public fun claimed_revenue(token: &LTC1Token): u64 {
     token.claimed_revenue
 }
 
+public fun package_id(token: &LTC1Token): ID {
+    token.package_id
+}
+
 /// Verify if a proposed document hash matches the package's registered hash
 public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bool {
     package.document_hash == document_hash
+}
+
+// ==================== Package-Private Helpers (for fractional.move) ====================
+
+/// Subtract `amount` from a token's balance, splitting claimed_revenue proportionally.
+/// Returns (balance_removed, claimed_revenue_removed).
+/// Asserts amount > 0 and amount < token.balance (cannot fractionalize entire token).
+public(package) fun subtract_balance(token: &mut LTC1Token, amount: u64): (u64, u64) {
+    assert!(amount > 0, E_ZERO_AMOUNT);
+    assert!(amount < token.balance, E_INSUFFICIENT_BALANCE);
+
+    // Split claimed_revenue proportionally
+    let claimed_split = (((token.claimed_revenue as u256) * (amount as u256)) / (token.balance as u256) as u64);
+
+    token.balance = token.balance - amount;
+    token.claimed_revenue = token.claimed_revenue - claimed_split;
+
+    (amount, claimed_split)
+}
+
+/// Create a new LTC1Token with exact values. Used during fraction redemption.
+public(package) fun create_token_from_fraction(
+    package_id: ID,
+    balance: u64,
+    claimed_revenue: u64,
+    ctx: &mut iota::tx_context::TxContext
+): LTC1Token {
+    LTC1Token {
+        id: iota::object::new(ctx),
+        balance,
+        package_id,
+        claimed_revenue,
+    }
+}
+
+/// Add balance and claimed_revenue from a fraction back to an existing token.
+/// Used by fractional::merge().
+public(package) fun add_fraction_balance(
+    token: &mut LTC1Token,
+    balance: u64,
+    claimed_revenue: u64,
+) {
+    token.balance = token.balance + balance;
+    token.claimed_revenue = token.claimed_revenue + claimed_revenue;
 }
