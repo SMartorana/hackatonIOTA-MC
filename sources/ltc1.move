@@ -24,6 +24,7 @@ const E_SUPPLY_TOO_LOW: u64 = 1007;
 const E_SALES_CLOSED: u64 = 1008;
 const E_ZERO_AMOUNT: u64 = 1009;
 const E_INSUFFICIENT_BALANCE: u64 = 1010;
+const E_INVALID_AMOUNT: u64 = 1011;
 
 /// Max investor share in BPS (95.0000%) - 6 decimals
 const MAX_INVESTOR_BPS: u64 = 950_000;
@@ -244,6 +245,9 @@ public entry fun buy_token<T>(
 ) {
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+
+    // 0.1. amount must be greater than 0
+    assert!(amount > 0, E_INVALID_AMOUNT);
 
     // 0.5. Verify Sales are Open
     assert!(package.sales_open, E_SALES_CLOSED);
