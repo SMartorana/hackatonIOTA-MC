@@ -37,6 +37,12 @@ const E_UNAUTHORIZED_CREATOR: u64 = 6;
 /// Sales toggle not authorized by NPLEX
 const E_SALES_TOGGLE_NOT_AUTHORIZED: u64 = 7;
 
+/// Hash not revoked
+const E_HASH_NOT_REVOKED: u64 = 8;
+
+/// Hash already revoked
+const E_HASH_ALREADY_REVOKED: u64 = 9;
+
 // ==================== Structs ====================
 /// One-Time Witness for the module
 public struct REGISTRY has drop {}
@@ -193,6 +199,7 @@ public entry fun revoke_hash(
 ) {
     assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+    assert!(!hash_info.is_revoked, E_HASH_ALREADY_REVOKED);
     hash_info.is_revoked = true;
 }
 
@@ -205,6 +212,7 @@ public entry fun unrevoke_hash(
 ) {
     assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+    assert!(hash_info.is_revoked, E_HASH_NOT_REVOKED);
     hash_info.is_revoked = false;
 }
 
