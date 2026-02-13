@@ -449,6 +449,21 @@ module nplex::fractional_tests {
             test_scenario::return_shared(vault);
         };
 
+        // 3. Manual Cleanup: Destroy the empty vault
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let vault = test_scenario::take_shared<FractionalVault<TEST_FRAC_COIN>>(&scenario);
+            fractional::destroy_empty_vault(vault, ctx(&mut scenario));
+        };
+
+        // 4. Verify TreasuryCap is frozen (immutable)
+        next_tx(&mut scenario, INVESTOR);
+        {
+            let cap = test_scenario::take_immutable<TreasuryCap<TEST_FRAC_COIN>>(&scenario);
+            assert!(coin::total_supply(&cap) == 0);
+            test_scenario::return_immutable(cap);
+        };
+
         test_scenario::end(scenario);
     }
 

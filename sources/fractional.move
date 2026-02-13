@@ -9,6 +9,8 @@ module nplex::fractional;
 
 use nplex::ltc1::{Self, LTC1Token, LTC1Package};
 use iota::coin::{Self, Coin, TreasuryCap};
+use std::type_name;
+use std::ascii::String;
 
 // ==================== Errors ====================
 const E_TREASURY_NOT_FRESH: u64 = 2001;
@@ -29,6 +31,21 @@ public struct FractionalVault<phantom F> has key {
     total_claimed_snapshot: u64,
     /// Total balance that was fractionalized (= total coins minted)
     total_fractionalized: u64,
+}
+
+/// Event emitted when a new FractionalVault is created
+public struct VaultCreated has copy, drop {
+    vault_id: ID,
+    package_id: ID,
+    fraction_type: String,
+    amount: u64,
+    minter: address,
+}
+
+/// Event emitted when a vault becomes empty (ready for manual destruction)
+public struct VaultEmpty has copy, drop {
+    vault_id: ID,
+    fraction_type: String,
 }
 
 // ==================== Entry Functions ====================
@@ -66,10 +83,19 @@ public entry fun fractionalize<F>(
         total_fractionalized: amount,
     };
 
-    // 5. Share the vault so anyone can redeem
+    // 5. Emit Event
+    iota::event::emit(VaultCreated {
+        vault_id: object::id(&vault),
+        package_id: ltc1::package_id(token),
+        fraction_type: type_name::get<F>().into_string(),
+        amount: amount,
+        minter: ctx.sender(),
+    });
+
+    // 6. Share the vault so anyone can redeem
     iota::transfer::share_object(vault);
 
-    // 6. Send coins to the caller
+    // 7. Send coins to the caller
     iota::transfer::public_transfer(coins, ctx.sender());
 }
 
@@ -110,6 +136,14 @@ public entry fun redeem<F, P>(
 
     // 5. Transfer the new token to the caller
     iota::transfer::public_transfer(token, ctx.sender());
+
+    // 6. Check if empty and emit event (but do NOT destroy automatically)
+    if (coin::total_supply(&vault.treasury_cap) == 0) {
+        iota::event::emit(VaultEmpty {
+            vault_id: object::id(vault),
+            fraction_type: type_name::get<F>().into_string(),
+        });
+    };
 }
 
 /// Merge back: burn Coin<F> and add the balance back to an existing LTC1Token.
@@ -137,6 +171,33 @@ public entry fun merge_back<F>(
 
     // 4. Add back to the existing token
     ltc1::add_fraction_balance(token, burn_amount, claimed);
+
+    // 5. Check if empty and emit event
+    if (coin::total_supply(&vault.treasury_cap) == 0) {
+        iota::event::emit(VaultEmpty {
+            vault_id: object::id(vault),
+            fraction_type: type_name::get<F>().into_string(),
+        });
+    };
+}
+
+/// Manually destroy an empty vault and return the TreasuryCap.
+/// Anyone can call this to clean up the state (permissionless).
+public entry fun destroy_empty_vault<F>(
+    vault: FractionalVault<F>,
+    _ctx: &mut TxContext
+) {
+    assert!(coin::total_supply(&vault.treasury_cap) == 0, E_ZERO_AMOUNT); // Reusing error code for checking non-zero supply
+
+    let FractionalVault {
+        id,
+        package_id: _,
+        treasury_cap,
+        total_claimed_snapshot: _,
+        total_fractionalized: _,
+    } = vault;
+    object::delete(id);
+    iota::transfer::public_freeze_object(treasury_cap);
 }
 
 // ==================== Accessors ====================
