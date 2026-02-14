@@ -10,7 +10,7 @@ module nplex::fractional;
 use nplex::ltc1::{Self, LTC1Token, LTC1Package};
 use iota::coin::{Self, Coin, TreasuryCap};
 use std::type_name;
-use std::ascii::String;
+use nplex::events;
 
 // ==================== Errors ====================
 const E_TREASURY_NOT_FRESH: u64 = 2001;
@@ -31,21 +31,6 @@ public struct FractionalVault<phantom F> has key {
     total_claimed_snapshot: u64,
     /// Total balance that was fractionalized (= total coins minted)
     total_fractionalized: u64,
-}
-
-/// Event emitted when a new FractionalVault is created
-public struct VaultCreated has copy, drop {
-    vault_id: ID,
-    package_id: ID,
-    fraction_type: String,
-    amount: u64,
-    minter: address,
-}
-
-/// Event emitted when a vault becomes empty (ready for manual destruction)
-public struct VaultEmpty has copy, drop {
-    vault_id: ID,
-    fraction_type: String,
 }
 
 // ==================== Entry Functions ====================
@@ -84,13 +69,14 @@ public entry fun fractionalize<F>(
     };
 
     // 5. Emit Event
-    iota::event::emit(VaultCreated {
-        vault_id: object::id(&vault),
-        package_id: ltc1::package_id(token),
-        fraction_type: type_name::get<F>().into_string(),
-        amount: amount,
-        minter: ctx.sender(),
-    });
+    // 5. Emit Event
+    events::emit_vault_created(
+        object::id(&vault),
+        ltc1::package_id(token),
+        type_name::get<F>().into_string(),
+        amount,
+        ctx.sender(),
+    );
 
     // 6. Share the vault so anyone can redeem
     iota::transfer::share_object(vault);
@@ -139,10 +125,10 @@ public entry fun redeem<F, P>(
 
     // 6. Check if empty and emit event (but do NOT destroy automatically)
     if (coin::total_supply(&vault.treasury_cap) == 0) {
-        iota::event::emit(VaultEmpty {
-            vault_id: object::id(vault),
-            fraction_type: type_name::get<F>().into_string(),
-        });
+        events::emit_vault_empty(
+            object::id(vault),
+            type_name::get<F>().into_string(),
+        );
     };
 }
 
@@ -174,10 +160,10 @@ public entry fun merge_back<F>(
 
     // 5. Check if empty and emit event
     if (coin::total_supply(&vault.treasury_cap) == 0) {
-        iota::event::emit(VaultEmpty {
-            vault_id: object::id(vault),
-            fraction_type: type_name::get<F>().into_string(),
-        });
+        events::emit_vault_empty(
+            object::id(vault),
+            type_name::get<F>().into_string(),
+        );
     };
 }
 

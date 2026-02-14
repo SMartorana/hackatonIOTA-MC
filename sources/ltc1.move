@@ -6,6 +6,7 @@
 module nplex::ltc1;
 
 use nplex::registry::{Self, NPLEXRegistry};
+use nplex::events;
 use iota::balance::{Self, Balance};
 use iota::coin::{Coin};
 use std::string::{Self, String};
@@ -69,6 +70,8 @@ public struct LTC1Package<phantom T> has key {
     id: iota::object::UID,
     name: String,
     document_hash: u256,
+    /// ID of the external Notarization Object (created via IOTA SDK)
+    notary_object_id: ID,
     
     // Supply & Pricing
     total_supply: u64,
@@ -161,6 +164,7 @@ public entry fun create_contract<T>(
     registry: &mut NPLEXRegistry,
     name: String,
     document_hash: u256,
+    notary_object_id: ID,
     total_supply: u64,
     token_price: u64,
     nominal_value: u64,
@@ -195,15 +199,22 @@ public entry fun create_contract<T>(
         id: package_uid,
         name,
         document_hash,
+        notary_object_id,
+        
+        // Supply & Pricing
         total_supply,
         max_sellable_supply,
         tokens_sold: 0,
         token_price,
         nominal_value,
+        
+        // Pools
         funding_pool: balance::zero<T>(),
         revenue_pool: balance::zero<T>(),
         total_revenue_deposited: 0,
         owner_legacy_revenue: 0,
+        
+        // Metadata & Admin
         owner_bond_id: bond_id,
         creation_timestamp: clock::timestamp_ms(clock),
         metadata_uri,
@@ -231,6 +242,13 @@ public entry fun create_contract<T>(
     
     // Send the bond ONLY to the owner (they need this to act as admin)
     iota::transfer::transfer(bond, owner);
+
+    // 8. Emit Event
+    events::emit_contract_created(
+        package_id,
+        owner,
+        nominal_value,
+    );
 }
 
 /// Buy tokens from the package
@@ -293,6 +311,14 @@ public entry fun buy_token<T>(
     package.owner_legacy_revenue = package.owner_legacy_revenue + initial_claimed;
 
     iota::transfer::public_transfer(token, iota::tx_context::sender(ctx));
+
+    // 7. Emit Event
+    events::emit_token_purchased(
+        iota::object::uid_to_inner(&package.id),
+        iota::tx_context::sender(ctx),
+        amount,
+        cost,
+    );
 }
 
 /// Withdraw Funding from the package (Owner Only)
@@ -336,6 +362,12 @@ public entry fun deposit_revenue<T>(
 
     // 3. Deposit to Revenue Pool
     balance::join(&mut package.revenue_pool, iota::coin::into_balance(payment));
+
+    // 4. Emit Event
+    events::emit_revenue_deposited(
+        iota::object::uid_to_inner(&package.id),
+        amount,
+    );
 }
 
 /// Claim Revenue for Owner

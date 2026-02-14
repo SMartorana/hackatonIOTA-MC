@@ -97,6 +97,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -288,6 +289,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -372,6 +374,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -427,6 +430,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -461,6 +465,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -547,6 +552,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -637,6 +643,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -858,6 +865,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 100, // TOO LOW (Min is 1B)
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -890,6 +898,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -924,6 +933,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -1058,6 +1068,7 @@ module nplex::ltc1_tests {
             &mut registry,
             string::utf8(b"LTC1 Package"),
             DOCUMENT_HASH,
+            object::id_from_address(@0xA11), // Dummy Notary ID
             TOTAL_SUPPLY,
             TOKEN_PRICE,
             NOMINAL_VALUE,
@@ -1112,6 +1123,7 @@ module nplex::ltc1_tests {
             &mut registry,
             string::utf8(b"LTC1 Package"),
             DOCUMENT_HASH,
+            object::id_from_address(@0xA11), // Dummy Notary ID
             TOTAL_SUPPLY,
             TOKEN_PRICE,
             NOMINAL_VALUE,
@@ -1146,6 +1158,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -1222,6 +1235,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -1325,6 +1339,7 @@ module nplex::ltc1_tests {
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,

@@ -83,6 +83,7 @@ module nplex::fractional_tests {
                 &mut registry,
                 string::utf8(b"Test Package"),
                 DOCUMENT_HASH,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -507,6 +508,7 @@ module nplex::fractional_tests {
                 &mut registry,
                 string::utf8(b"Other Package"),
                 999999999,
+                object::id_from_address(@0xA11), // Dummy Notary ID
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
