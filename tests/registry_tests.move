@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Federico Abrignani. All rights reserved.
 /// Unit tests for NPLEX Registry
-/// Tests hash registration, validation, revocation, and access control
+/// Tests notarization registration, validation, revocation, and access control
 
 #[test_only]
 #[allow(implicit_const_copy)]
@@ -15,13 +15,15 @@ module nplex::registry_tests {
     #[allow(unused_const)]
     const ALICE: address = @0xA;
     #[allow(unused_const)]
+    const BOB: address = @0xB;
+
+    // Test data — notarization IDs (stable mock IDs)
+    #[allow(unused_const)]
     const Verified_hash: u256 = 1;
     #[allow(unused_const)]
     const Unverified_hash: u256 = 2;
     #[allow(unused_const)]  
     const Revoked_hash: u256 = 3;
-    #[allow(unused_const)]
-    const BOB: address = @0xB;
 
     // Witness for testing
     public struct TestWitness has drop {}
@@ -29,7 +31,12 @@ module nplex::registry_tests {
     // Witness for unauthorized testing
     public struct UnauthorizedWitness has drop {}
 
-    // Fixture to initialize the registry and register a hashes
+    // Helper: Create a stable notarization ID from an address
+    fun verified_notarization_id(): ID { object::id_from_address(@0xA01) }
+    fun revoked_notarization_id(): ID { object::id_from_address(@0xA02) }
+    fun unverified_notarization_id(): ID { object::id_from_address(@0xA03) }
+
+    // Fixture to initialize the registry and register notarizations
     #[test_only]
     fun fixture_init_registry_and_setup_hashes(scenario: &mut test_scenario::Scenario) {
         // 1. Initialize
@@ -38,13 +45,13 @@ module nplex::registry_tests {
         // 2. Commit initialization transaction
         test_scenario::next_tx(scenario, ADMIN);
         
-        // 3. Register hash
+        // 3. Register verified notarization
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             let clock = clock::create_for_testing(test_scenario::ctx(scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(scenario));
+            registry::register_notarization(&mut registry, &admin_cap, verified_notarization_id(), Verified_hash, ADMIN, &clock, test_scenario::ctx(scenario));
             // Authorize TestWitness
             registry::add_executor<TestWitness>(&mut registry, &admin_cap);
             
@@ -53,26 +60,26 @@ module nplex::registry_tests {
             test_scenario::return_to_sender(scenario, admin_cap);
         };
 
-        // 4. register Revoked_hash
+        // 4. Register revoked notarization
         test_scenario::next_tx(scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             let clock = clock::create_for_testing(test_scenario::ctx(scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Revoked_hash, ADMIN, &clock, test_scenario::ctx(scenario));
+            registry::register_notarization(&mut registry, &admin_cap, revoked_notarization_id(), Revoked_hash, ADMIN, &clock, test_scenario::ctx(scenario));
             
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
         };
-        // 5. revoke Revoked_hash
+        // 5. Revoke the revoked notarization
         test_scenario::next_tx(scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             
-            registry::revoke_hash(&mut registry, &admin_cap, Revoked_hash);
+            registry::revoke_notarization(&mut registry, &admin_cap, revoked_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
@@ -80,17 +87,17 @@ module nplex::registry_tests {
     }
 
     #[test]
-    fun test_register_and_validate_hash() {
+    fun test_register_and_validate_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Verify hash is valid
+        // Verify notarization is valid
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            assert!(registry::is_valid_hash(&registry, Verified_hash), 0);
+            assert!(registry::is_valid_notarization(&registry, verified_notarization_id()), 0);
             test_scenario::return_shared(registry);
         };
         
@@ -98,36 +105,23 @@ module nplex::registry_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
-    fun test_register_same_hash_twice() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_ALREADY_USED)]
+    fun test_register_same_notarization_twice() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Register hash first time (Success)
+        // Register notarization first time (Success — already done in fixture)
+        // Register same notarization ID second time (Fail)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
-            
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-            test_scenario::return_to_sender(&scenario, admin_cap);
-        };
-        
-        // Register same hash second time (Fail)
-        test_scenario::next_tx(&mut scenario, ADMIN);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
-            
-            // This should abort with E_HASH_ALREADY_USED
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
+            // This should abort with E_NOTARIZATION_ALREADY_USED
+            registry::register_notarization(&mut registry, &admin_cap, verified_notarization_id(), Verified_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
             
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -138,19 +132,19 @@ module nplex::registry_tests {
     }
 
     #[test]
-    fun test_unregistered_hash_is_invalid() {
+    fun test_unregistered_notarization_is_invalid() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture to set up common state
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Check unregistered hash
+        // Check unregistered notarization
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             // Should be invalid
-            assert!(!registry::is_valid_hash(&registry, Unverified_hash), 0);
+            assert!(!registry::is_valid_notarization(&registry, unverified_notarization_id()), 0);
             
             test_scenario::return_shared(registry);
         };
@@ -159,17 +153,17 @@ module nplex::registry_tests {
     }
 
     #[test]
-    fun test_revoked_hash_is_invalid() {
+    fun test_revoked_notarization_is_invalid() {
         let mut scenario = test_scenario::begin(ADMIN);
         
-        // Use fixture (already contains Revoked_hash which is revoked)
+        // Use fixture (already contains revoked notarization)
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Verify Revoked_hash is invalid
+        // Verify revoked notarization is invalid
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            assert!(!registry::is_valid_hash(&registry, Revoked_hash), 1);
+            assert!(!registry::is_valid_notarization(&registry, revoked_notarization_id()), 1);
             test_scenario::return_shared(registry);
         };
         
@@ -178,7 +172,7 @@ module nplex::registry_tests {
 
     #[test]
     #[expected_failure(abort_code = test_scenario::EEmptyInventory)]
-    fun test_non_admin_cannot_register_hash() {
+    fun test_non_admin_cannot_register_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Initialize registry (ADMIN gets the admin_cap)
@@ -186,7 +180,7 @@ module nplex::registry_tests {
             registry::init_for_testing(test_scenario::ctx(&mut scenario));
         };
         
-        // Alice (non-admin) tries to register a hash
+        // Alice (non-admin) tries to register a notarization
         test_scenario::next_tx(&mut scenario, ALICE);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -196,8 +190,9 @@ module nplex::registry_tests {
             let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
             let document_hash: u256 = 4;
+            let notarization_id = object::id_from_address(@0xA04);
             
-            registry::register_hash(&mut registry, &admin_cap, document_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
+            registry::register_notarization(&mut registry, &admin_cap, notarization_id, document_hash, ADMIN, &clock, test_scenario::ctx(&mut scenario));
             
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -209,13 +204,13 @@ module nplex::registry_tests {
 
     #[test]
     #[expected_failure(abort_code = test_scenario::EEmptyInventory)]
-    fun test_non_admin_cannot_revoke_hash() {
+    fun test_non_admin_cannot_revoke_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Alice tries to revoke the hash
+        // Alice tries to revoke the notarization
         test_scenario::next_tx(&mut scenario, ALICE);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -223,7 +218,7 @@ module nplex::registry_tests {
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::revoke_hash(&mut registry, &admin_cap, Verified_hash);
+            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -234,7 +229,7 @@ module nplex::registry_tests {
 
     #[test]
     #[expected_failure(abort_code = test_scenario::EEmptyInventory)]
-    fun test_non_admin_cannot_unrevoke_hash() {
+    fun test_non_admin_cannot_unrevoke_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
@@ -245,12 +240,12 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::revoke_hash(&mut registry, &admin_cap, Verified_hash);
+            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
         
-        // Alice tries to unrevoke the hash
+        // Alice tries to unrevoke the notarization
         test_scenario::next_tx(&mut scenario, ALICE);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
@@ -258,7 +253,7 @@ module nplex::registry_tests {
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::unrevoke_hash(&mut registry, &admin_cap, Verified_hash);
+            registry::unrevoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -268,35 +263,35 @@ module nplex::registry_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
-    fun test_same_ltc1_cannot_use_same_hash_twice() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_ALREADY_USED)]
+    fun test_same_ltc1_cannot_use_same_notarization_twice() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // mark_hash_used first time (Success)
+        // claim_notarization first time (Success)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
         };
         
-        // mark_hash_used second time (Fail)
+        // claim_notarization second time (Fail)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             let id2 = object::id_from_address(@0x101);
             
-            // This should abort with E_HASH_ALREADY_USED
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            // This should abort with E_NOTARIZATION_ALREADY_USED
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -306,35 +301,35 @@ module nplex::registry_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_ALREADY_USED)]
-    fun test_different_ltc1_cannot_use_same_hash_twice() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_ALREADY_USED)]
+    fun test_different_ltc1_cannot_use_same_notarization_twice() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // mark_hash_used first time (Success)
+        // claim_notarization first time (Success)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
         };
         
-        // mark_hash_used second time (Fail)
+        // claim_notarization second time (Fail)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             let id2 = object::id_from_address(@0x102);
             
-            // This should abort with E_HASH_ALREADY_USED
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            // This should abort with E_NOTARIZATION_ALREADY_USED
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -344,21 +339,21 @@ module nplex::registry_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_NOT_APPROVED)]
-    fun test_ltc1_cannot_use_unapproved_hash() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_NOT_APPROVED)]
+    fun test_ltc1_cannot_use_unapproved_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Try to use unverified hash
+        // Try to use unregistered notarization
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let id = object::id_from_address(@0x103);
             
-            // This should abort with E_HASH_NOT_APPROVED
-            let claim = registry::claim_hash(&mut registry, Unverified_hash, test_scenario::ctx(&mut scenario));
+            // This should abort with E_NOTARIZATION_NOT_APPROVED
+            let claim = registry::claim_notarization(&mut registry, unverified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -367,21 +362,21 @@ module nplex::registry_tests {
         test_scenario::end(scenario);
     }
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_REVOKED)]
-    fun test_ltc1_cannot_use_revoked_hash() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_REVOKED)]
+    fun test_ltc1_cannot_use_revoked_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Use fixture
         fixture_init_registry_and_setup_hashes(&mut scenario);
         
-        // Try to use revoked hash
+        // Try to use revoked notarization
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let id = object::id_from_address(@0x104);
             
-            // This should abort with E_HASH_REVOKED
-            let claim = registry::claim_hash(&mut registry, Revoked_hash, test_scenario::ctx(&mut scenario));
+            // This should abort with E_NOTARIZATION_REVOKED
+            let claim = registry::claim_notarization(&mut registry, revoked_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -404,7 +399,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x105);
             
             // This should fail because UnauthorizedWitness is not in the table
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, UnauthorizedWitness {});
             
             test_scenario::return_shared(registry);
@@ -517,7 +512,7 @@ module nplex::registry_tests {
         test_scenario::end(scenario);
     }
     #[test]
-    fun test_claim_hash_authorized_success() {
+    fun test_claim_notarization_authorized_success() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // 0. Initialize
@@ -525,14 +520,14 @@ module nplex::registry_tests {
             registry::init_for_testing(test_scenario::ctx(&mut scenario));
         };
 
-        // 1. Register hash with authorized creator (ALICE)
+        // 1. Register notarization with authorized creator (ALICE)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
+            registry::register_notarization(&mut registry, &admin_cap, verified_notarization_id(), Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
             // Authorize TestWitness
             registry::add_executor<TestWitness>(&mut registry, &admin_cap);
 
@@ -541,16 +536,16 @@ module nplex::registry_tests {
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // 2. ALICE claims the hash (Success)
+        // 2. ALICE claims the notarization (Success)
         test_scenario::next_tx(&mut scenario, ALICE);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let id = object::id_from_address(@0x106);
             
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
-            assert!(registry::is_hash_used(&registry, Verified_hash), 0);
+            assert!(registry::is_notarization_used(&registry, verified_notarization_id()), 0);
 
             test_scenario::return_shared(registry);
         };
@@ -560,7 +555,7 @@ module nplex::registry_tests {
 
     #[test]
     #[expected_failure(abort_code = registry::E_UNAUTHORIZED_CREATOR)]
-    fun test_claim_hash_unauthorized_fail() {
+    fun test_claim_notarization_unauthorized_fail() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // 0. Initialize
@@ -568,30 +563,30 @@ module nplex::registry_tests {
             registry::init_for_testing(test_scenario::ctx(&mut scenario));
         };
 
-        // 1. Register hash with authorized creator (ALICE)
+        // 1. Register notarization with authorized creator (ALICE)
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
             
-            registry::register_hash(&mut registry, &admin_cap, Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
+            registry::register_notarization(&mut registry, &admin_cap, verified_notarization_id(), Verified_hash, ALICE, &clock, test_scenario::ctx(&mut scenario));
             
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // 2. BOB tries to claim the hash (Fail)
+        // 2. BOB tries to claim the notarization (Fail)
         test_scenario::next_tx(&mut scenario, BOB);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             // This should abort with E_UNAUTHORIZED_CREATOR
-            let claim = registry::claim_hash(&mut registry, Verified_hash, test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
             
             // Should not reach here
-            registry::burn_hash_claim(claim);
+            registry::burn_notarization_claim(claim);
             test_scenario::return_shared(registry);
         };
         

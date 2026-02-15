@@ -31,7 +31,7 @@ module nplex::test_frac_coin {
 
 #[test_only, allow(unused_const)]
 module nplex::fractional_tests {
-    use nplex::ltc1::{Self, LTC1Package, LTC1Token, LTC1Witness};
+    use nplex::ltc1::{Self, LTC1Package, LTC1Token, LTC1Witness, OwnerBond};
     use nplex::fractional::{Self, FractionalVault};
     use nplex::registry::{Self, NPLEXRegistry, NPLEXAdminCap};
     use nplex::test_frac_coin::TEST_FRAC_COIN;
@@ -40,6 +40,9 @@ module nplex::fractional_tests {
     use iota::iota::IOTA;
     use iota::clock;
     use std::string;
+    use iota_notarization::notarization;
+    use iota_notarization::dynamic_notarization;
+    use iota_notarization::timelock;
 
     // Test Users
     const ADMIN: address = @0xAD;
@@ -63,27 +66,46 @@ module nplex::fractional_tests {
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
-        let clock = clock::create_for_testing(ctx(scenario));
 
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(scenario));
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
-        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }
 
     fun create_contract_and_buy(scenario: &mut Scenario, buy_amount: u64): ID {
-        // Create contract
+        // Step 1: ADMIN creates notarization and registers its real ID
+        next_tx(scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+            let clock = clock::create_for_testing(ctx(scenario));
+
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(scenario)
+            );
+            let real_id = object::id(&notarization_obj);
+            registry::register_notarization(
+                &mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(scenario)
+            );
+            dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(scenario));
+
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(scenario, admin_cap);
+        };
+
+        // Step 2: OWNER creates contract
         next_tx(scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
             let clock = clock::create_for_testing(ctx(scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"Test Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -92,18 +114,17 @@ module nplex::fractional_tests {
                 &clock,
                 ctx(scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
-        // Get Package ID
-        next_tx(scenario, ADMIN);
+        // Step 3: Get package_id from OwnerBond
+        next_tx(scenario, OWNER);
         let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
+            let bond = test_scenario::take_from_sender<OwnerBond>(scenario);
+            let id = ltc1::bond_package_id(&bond);
+            test_scenario::return_to_sender(scenario, bond);
             id
         };
 
@@ -494,7 +515,15 @@ module nplex::fractional_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
-            registry::register_hash(&mut registry, &admin_cap, 999999999, OWNER, &clock, ctx(&mut scenario));
+
+            let state = notarization::new_state_from_generic<u256>(999999999, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
+            let real_id = object::id(&notarization_obj);
+            registry::register_notarization(&mut registry, &admin_cap, real_id, 999999999, OWNER, &clock, ctx(&mut scenario));
+            dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
+
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -503,12 +532,12 @@ module nplex::fractional_tests {
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"Other Package"),
-                999999999,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -517,18 +546,19 @@ module nplex::fractional_tests {
                 &clock,
                 ctx(&mut scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
-        // Get the OTHER package ID
-        next_tx(&mut scenario, ADMIN);
+        // Get the OTHER package ID from OwnerBond
+        next_tx(&mut scenario, OWNER);
         let other_package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, 999999999);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
+            // OWNER now has 2 bonds; we need the most recent one (the "other" contract)
+            // Since take_from_sender returns the most recently created, this should be the second bond
+            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let id = ltc1::bond_package_id(&bond);
+            test_scenario::return_to_sender(&scenario, bond);
             id
         };
 

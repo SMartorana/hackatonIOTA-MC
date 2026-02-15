@@ -169,6 +169,7 @@ public entry fun merge_back<F>(
 
 /// Manually destroy an empty vault and return the TreasuryCap.
 /// Anyone can call this to clean up the state (permissionless).
+#[allow(lint(freezing_capability))]
 public entry fun destroy_empty_vault<F>(
     vault: FractionalVault<F>,
     _ctx: &mut TxContext
