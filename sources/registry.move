@@ -7,9 +7,9 @@
 
 module nplex::registry;
 
+use nplex::display_utils;
+
 use iota::table::{Self, Table};
-use std::string;
-use iota::display;
 use iota::dynamic_field as df;
 use iota::package;
 use iota::clock::{Self, Clock};
@@ -42,6 +42,18 @@ const E_HASH_NOT_REVOKED: u64 = 8;
 
 /// Hash already revoked
 const E_HASH_ALREADY_REVOKED: u64 = 9;
+
+// ==================== Display Constants ====================
+
+const DISPLAY_KEY_NAME: vector<u8> = b"name";
+const DISPLAY_KEY_DESCRIPTION: vector<u8> = b"description";
+const DISPLAY_KEY_IMAGE_URL: vector<u8> = b"image_url";
+const DISPLAY_KEY_PROJECT_URL: vector<u8> = b"project_url";
+
+const ADMIN_DISPLAY_NAME: vector<u8> = b"NPLEX Administrator Capability";
+const ADMIN_DISPLAY_DESCRIPTION: vector<u8> = b"Grants administrative control over the NPLEX Registry.";
+const ADMIN_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/admin_crown.png";
+const ADMIN_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
 
 // ==================== Structs ====================
 /// One-Time Witness for the module
@@ -96,12 +108,29 @@ public struct HashInfo has store, copy, drop {
 
 /// Module initializer - called once when contract is published
 /// Creates the registry and gives admin capability to publisher
+
+#[allow(lint(share_owned))]
 fun init(otw: REGISTRY, ctx: &mut TxContext) {
     // 1. Claim Publisher
     let publisher = package::claim(otw, ctx);
 
-    // 2. Setup Display
-    setup_display(&publisher, ctx);
+    // Create Display for Admin Cap
+    display_utils::setup_display! <NPLEXAdminCap> (
+        &publisher,
+        vector[
+            std::string::utf8(DISPLAY_KEY_NAME),
+            std::string::utf8(DISPLAY_KEY_DESCRIPTION),
+            std::string::utf8(DISPLAY_KEY_IMAGE_URL),
+            std::string::utf8(DISPLAY_KEY_PROJECT_URL),
+        ],
+        vector[
+            std::string::utf8(ADMIN_DISPLAY_NAME),
+            std::string::utf8(ADMIN_DISPLAY_DESCRIPTION),
+            std::string::utf8(ADMIN_DISPLAY_IMAGE_URL),
+            std::string::utf8(ADMIN_DISPLAY_PROJECT_URL),
+        ],
+        ctx
+    );
 
     // 3. Create admin capability and send to deployer
     let admin_cap = NPLEXAdminCap {
@@ -123,30 +152,7 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
     transfer::public_transfer(publisher, tx_context::sender(ctx));
 }
 
-#[allow(lint(share_owned))]
-fun setup_display(publisher: &package::Publisher, ctx: &mut TxContext) {
-    // 1. Define Display for NPLEXAdminCap
-    let admin_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
 
-    let admin_values = vector[
-        string::utf8(b"NPLEX Administrator Capability"),
-        string::utf8(b"Grants administrative control over the NPLEX Registry."),
-        string::utf8(b"https://api.nplex.eu/icons/admin_crown.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut admin_display = display::new_with_fields<NPLEXAdminCap>(
-        publisher, admin_keys, admin_values, ctx
-    );
-    display::update_version(&mut admin_display);
-    
-    transfer::public_share_object(admin_display);
-}
 
 // ==================== Admin Functions ====================
 

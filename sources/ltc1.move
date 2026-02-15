@@ -7,10 +7,11 @@ module nplex::ltc1;
 
 use nplex::registry::{Self, NPLEXRegistry};
 use nplex::events;
+use nplex::display_utils;
+
 use iota::balance::{Self, Balance};
 use iota::coin::{Coin};
-use std::string::{Self, String};
-use iota::display;
+use std::string::String;
 use iota::package;
 use iota::clock::{Self, Clock};
 
@@ -33,6 +34,23 @@ const SPLIT_DENOMINATOR: u64 = 1_000_000;
 
 /// Min total supply (decrease the dust due to divisions rounding)
 const MIN_SUPPLY: u64 = 1_000_000_000;
+
+// ==================== Display Constants ====================
+
+const BOND_DISPLAY_NAME: vector<u8> = b"NPLEX Owner Bond";
+const BOND_DISPLAY_DESCRIPTION: vector<u8> = b"Administrative key for LTC1 Package {package_id}";
+const BOND_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/bond_gold.png";
+const BOND_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
+
+const TOKEN_DISPLAY_NAME: vector<u8> = b"NPLEX Investor Token";
+const TOKEN_DISPLAY_DESCRIPTION: vector<u8> = b"Investor share for LTC1 Package {package_id}";
+const TOKEN_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/token_blue.png";
+const TOKEN_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
+
+const DISPLAY_KEY_NAME: vector<u8> = b"name";
+const DISPLAY_KEY_DESCRIPTION: vector<u8> = b"description";
+const DISPLAY_KEY_IMAGE_URL: vector<u8> = b"image_url";
+const DISPLAY_KEY_PROJECT_URL: vector<u8> = b"project_url";
 
 // ==================== Structs ====================
 
@@ -100,62 +118,50 @@ public struct LTC1Package<phantom T> has key {
 
 // ==================== Initialization ====================
 
+#[allow(lint(share_owned))]
 fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
     // 1. Claim Publisher
     let publisher = package::claim(otw, ctx);
 
     // 2. Setup Display
-    setup_display(&publisher, ctx);
+    // OwnerBond
+    display_utils::setup_display! <OwnerBond> (
+        &publisher,
+        vector[
+            std::string::utf8(DISPLAY_KEY_NAME),
+            std::string::utf8(DISPLAY_KEY_DESCRIPTION),
+            std::string::utf8(DISPLAY_KEY_IMAGE_URL),
+            std::string::utf8(DISPLAY_KEY_PROJECT_URL),
+        ],
+        vector[
+            std::string::utf8(BOND_DISPLAY_NAME),
+            std::string::utf8(BOND_DISPLAY_DESCRIPTION),
+            std::string::utf8(BOND_DISPLAY_IMAGE_URL),
+            std::string::utf8(BOND_DISPLAY_PROJECT_URL),
+        ],
+        ctx
+    );
+
+    // LTC1Token
+    display_utils::setup_display! <LTC1Token> (
+        &publisher,
+        vector[
+            std::string::utf8(DISPLAY_KEY_NAME),
+            std::string::utf8(DISPLAY_KEY_DESCRIPTION),
+            std::string::utf8(DISPLAY_KEY_IMAGE_URL),
+            std::string::utf8(DISPLAY_KEY_PROJECT_URL),
+        ],
+        vector[
+            std::string::utf8(TOKEN_DISPLAY_NAME),
+            std::string::utf8(TOKEN_DISPLAY_DESCRIPTION),
+            std::string::utf8(TOKEN_DISPLAY_IMAGE_URL),
+            std::string::utf8(TOKEN_DISPLAY_PROJECT_URL),
+        ],
+        ctx
+    );
 
     // 3. Cleanup & Transfer
     iota::transfer::public_transfer(publisher, iota::tx_context::sender(ctx));
-}
-
-#[allow(lint(share_owned))]
-fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::TxContext) {
-    // 1. Define Display for OwnerBond
-    let bond_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
-
-    let bond_values = vector[
-        string::utf8(b"NPLEX Owner Bond"),
-        string::utf8(b"Administrative key for LTC1 Package {package_id}"),
-        string::utf8(b"https://api.nplex.eu/icons/bond_gold.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut bond_display = display::new_with_fields<OwnerBond>(
-        publisher, bond_keys, bond_values, ctx
-    );
-    display::update_version(&mut bond_display);
-
-    // 2. Define Display for LTC1Token
-    let token_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
-
-    let token_values = vector[
-        string::utf8(b"NPLEX Investor Token"),
-        string::utf8(b"Investor share for LTC1 Package {package_id}"),
-        string::utf8(b"https://api.nplex.eu/icons/token_blue.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut token_display = display::new_with_fields<LTC1Token>(
-        publisher, token_keys, token_values, ctx
-    );
-    display::update_version(&mut token_display);
-
-    // 3. Share Displays
-    iota::transfer::public_share_object(bond_display);
-    iota::transfer::public_share_object(token_display);
 }
 
 // ==================== Public Functions ====================
