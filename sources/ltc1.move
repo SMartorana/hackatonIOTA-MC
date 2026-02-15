@@ -14,6 +14,7 @@ use iota::coin::{Coin};
 use std::string::String;
 use iota::package;
 use iota::clock::{Self, Clock};
+use iota_notarization::notarization::{Self, Notarization};
 
 // ==================== Errors ====================
 const E_INSUFFICIENT_SUPPLY: u64 = 1001;
@@ -169,8 +170,7 @@ fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
 public entry fun create_contract<T>(
     registry: &mut NPLEXRegistry,
     name: String,
-    document_hash: u256,
-    notary_object_id: ID,
+    notarization: &Notarization<u256>,
     total_supply: u64,
     token_price: u64,
     nominal_value: u64,
@@ -181,14 +181,19 @@ public entry fun create_contract<T>(
 ) {
     let owner = iota::tx_context::sender(ctx); // Owner is the creator
 
+    // 0. Extract hash and ID from Notarization
+    let state = notarization::state(notarization);
+    let document_hash = *notarization::data(state);
+    let notary_object_id = iota::object::id(notarization);
+
     // 0. Validate Split
     assert!(investor_split_bps <= MAX_INVESTOR_BPS, E_INVALID_SPLIT);
 
     // 1. Validate Total Supply
     assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
 
-    // 2. Claim hash
-    let claim = registry::claim_hash(registry, document_hash, ctx);
+    // 2. Claim notarization
+    let claim = registry::claim_notarization(registry, notary_object_id, ctx);
 
     // 3. Create UIDs first to get IDs (Resolves circular dependency)
     let package_uid = iota::object::new(ctx);
@@ -268,7 +273,7 @@ public entry fun buy_token<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 0.1. amount must be greater than 0
     assert!(amount > 0, E_INVALID_AMOUNT);
@@ -337,7 +342,7 @@ public entry fun withdraw_funding<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify OwnerBond matches this package
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -357,7 +362,7 @@ public entry fun deposit_revenue<T>(
     _ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify OwnerBond matches this package
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -387,7 +392,7 @@ public entry fun claim_revenue_owner<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify Bond
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -462,7 +467,7 @@ public entry fun claim_revenue<T>(
 ) {
     // Verify Contract Status (not revoked)
     // TODO this has to be checked in the future when we have a more granular control over permissions
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify Token belongs to this package
     assert!(token.package_id == iota::object::uid_to_inner(&package.id), E_INVALID_TOKEN);

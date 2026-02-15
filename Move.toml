@@ -5,7 +5,7 @@ edition = "2024"
 [dependencies.IotaNotarization]
 git = "https://github.com/iotaledger/notarization.git"
 subdir = "notarization-move"
-rev = "v0.1.15"
+rev = "f589f65c9a5d1ad3a712fda519e5a485b67081ef"
 
 [addresses]
 nplex = "0x0"

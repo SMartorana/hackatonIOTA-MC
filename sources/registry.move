@@ -13,18 +13,17 @@ use iota::table::{Self, Table};
 use iota::dynamic_field as df;
 use iota::package;
 use iota::clock::{Self, Clock};
-use iota_notarization::notarization;
 
 // ==================== Error Codes ====================
 
-/// Hash is not registered in the registry or has been revoked
-const E_HASH_NOT_APPROVED: u64 = 1;
+/// Notarization is not registered in the registry or has been revoked
+const E_NOTARIZATION_NOT_APPROVED: u64 = 1;
 
-/// Hash has already been used to create an LTC1 contract
-const E_HASH_ALREADY_USED: u64 = 2;
+/// Notarization has already been used to create an LTC1 contract
+const E_NOTARIZATION_ALREADY_USED: u64 = 2;
 
-/// Hash has been revoked by NPLEX
-const E_HASH_REVOKED: u64 = 3;
+/// Notarization has been revoked by NPLEX
+const E_NOTARIZATION_REVOKED: u64 = 3;
 
 /// Executor module is not authorized to bind hashes
 const E_UNAUTHORIZED_EXECUTOR: u64 = 4;
@@ -38,11 +37,11 @@ const E_UNAUTHORIZED_CREATOR: u64 = 6;
 /// Sales toggle not authorized by NPLEX
 const E_SALES_TOGGLE_NOT_AUTHORIZED: u64 = 7;
 
-/// Hash not revoked
-const E_HASH_NOT_REVOKED: u64 = 8;
+/// Notarization not revoked
+const E_NOTARIZATION_NOT_REVOKED: u64 = 8;
 
-/// Hash already revoked
-const E_HASH_ALREADY_REVOKED: u64 = 9;
+/// Notarization already revoked
+const E_NOTARIZATION_ALREADY_REVOKED: u64 = 9;
 
 // ==================== Display Constants ====================
 
@@ -62,6 +61,7 @@ public struct REGISTRY has drop {}
 
 /// Hot potato struct to ensure hash usage flow
 public struct HashClaim {
+    notarization_id: ID,
     document_hash: u256
 }
 
@@ -74,34 +74,36 @@ public struct NPLEXAdminCap has key, store {
 /// Key for Authorized Executors (Dynamic Field)
 public struct ExecutorKey<phantom T> has copy, drop, store {}
 
-/// Central registry of approved NPL package hashes
+/// Central registry of approved NPL package notarizations
 /// Shared object - anyone can read, only admin can mutate
 public struct NPLEXRegistry has key {
     id: UID,
-    /// Maps document hash -> package information
-    approved_hashes: Table<u256, HashInfo>,
+    /// Maps notarization ID -> package information
+    approved_notarizations: Table<ID, HashInfo>,
     /// Maps Contract ID -> Authorized New Owner Address
     authorized_transfers: Table<ID, address>,
     /// Maps Contract ID -> Target sales state (true = open, false = closed)
     authorized_sales_toggles: Table<ID, bool>,
-    /// List of registered hash keys (Iteratable index for Frontend)
+    /// List of registered notarization IDs (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
-    registered_hash_keys: vector<u256>,
+    registered_notarization_ids: vector<ID>,
     // Dynamic Fields are used for allowed_executors
     // Key: ExecutorKey<T> -> Value: bool (true)
 }
 
-/// Information about an approved hash
+/// Information about an approved notarization
 public struct HashInfo has store, copy, drop {
+    /// The document hash associated with this notarization
+    document_hash: u256,
     /// When this hash was approved
     approved_timestamp: u64,
     /// Address that approved this hash (NPLEX auditor)
     auditor: address,
     /// Whether this hash has been revoked
     is_revoked: bool,
-    /// ID of LTC1 contract created with this hash (None if not yet used)
+    /// ID of LTC1 contract created with this notarization (None if not yet used)
     contract_id: option::Option<ID>,
-    /// Only this address is authorized to create a contract with this hash
+    /// Only this address is authorized to create a contract with this notarization
     authorized_creator: address,
 }
 
@@ -142,10 +144,10 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
     // 4. Create shared registry
     let registry = NPLEXRegistry {
         id: object::new(ctx),
-        approved_hashes: table::new(ctx),
+        approved_notarizations: table::new(ctx),
         authorized_transfers: table::new(ctx),
         authorized_sales_toggles: table::new(ctx),
-        registered_hash_keys: vector::empty(),
+        registered_notarization_ids: vector::empty(),
     };
     transfer::share_object(registry);
 
@@ -157,19 +159,20 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
 
 // ==================== Admin Functions ====================
 
-/// Register a new approved hash in the registry
-/// Invarant: only callable by NPLEX admin and hash must have not been registered before
-public entry fun register_hash(
+/// Register a new approved notarization in the registry
+public entry fun register_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
+    notarization_id: ID,
     document_hash: u256,
     authorized_creator: address,
     clock: &Clock,
     ctx: &TxContext
 ) {
-    assert!(!table::contains(&registry.approved_hashes, document_hash), E_HASH_ALREADY_USED);
+    assert!(!table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_ALREADY_USED);
     
     let hash_info = HashInfo {
+        document_hash,
         approved_timestamp: clock::timestamp_ms(clock),
         auditor: tx_context::sender(ctx),
         is_revoked: false,
@@ -177,49 +180,45 @@ public entry fun register_hash(
         authorized_creator,
     };
     
-    table::add(&mut registry.approved_hashes, document_hash, hash_info);
-    vector::push_back(&mut registry.registered_hash_keys, document_hash);
+    table::add(&mut registry.approved_notarizations, notarization_id, hash_info);
+    vector::push_back(&mut registry.registered_notarization_ids, notarization_id);
 }
 
-/// Update the authorized creator for a registered hash
-/// Invariant: only callable by NPLEX admin and hash must have been registered before and not used yet
+/// Update the authorized creator for a registered notarization
 public entry fun update_authorized_creator(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    document_hash: u256,
+    notarization_id: ID,
     new_creator: address
 ) {
-    assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
-    let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
-    assert!(option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
+    assert!(option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
     
     hash_info.authorized_creator = new_creator;
 }
 
-/// Revoke a previously approved hash (emergency use)
-/// This prevents new operations on LTC1 contracts with this hash
-/// Invariant: only callable by NPLEX admin and hash must have been registered before
-public entry fun revoke_hash(
+/// Revoke a previously approved notarization
+public entry fun revoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    document_hash: u256
+    notarization_id: ID
 ) {
-    assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
-    let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
-    assert!(!hash_info.is_revoked, E_HASH_ALREADY_REVOKED);
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
+    assert!(!hash_info.is_revoked, E_NOTARIZATION_ALREADY_REVOKED);
     hash_info.is_revoked = true;
 }
 
-/// Un-revoke a hash (if revocation was in error)
-/// Invariant: only callable by NPLEX admin and hash must have been registered before
-public entry fun unrevoke_hash(
+/// Un-revoke a notarization
+public entry fun unrevoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    document_hash: u256
+    notarization_id: ID
 ) {
-    assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
-    let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
-    assert!(hash_info.is_revoked, E_HASH_NOT_REVOKED);
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
+    assert!(hash_info.is_revoked, E_NOTARIZATION_NOT_REVOKED);
     hash_info.is_revoked = false;
 }
 
@@ -276,34 +275,30 @@ public entry fun authorize_sales_toggle(
 
 // ==================== Validation Functions ====================
 
-/// Claim a hash to start usage flow
-/// Returns a hot potato that must be consumed by bind_executor
-/// Invariant: hash must have been registered before and not revoked and not used yet by another ltc1 contract
-public fun claim_hash(
+/// Claim a notarization to start usage flow
+public fun claim_notarization(
     registry: &mut NPLEXRegistry,
-    document_hash: u256,
+    notarization_id: ID,
     ctx: &TxContext
 ): HashClaim {
-    // Verify hash is approved
-    assert!(table::contains(&registry.approved_hashes, document_hash), E_HASH_NOT_APPROVED);
+    // Verify notarization is approved
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     
-    let hash_info = table::borrow(&registry.approved_hashes, document_hash);
+    let hash_info = table::borrow(&registry.approved_notarizations, notarization_id);
     
     // Verify not revoked
-    assert!(!hash_info.is_revoked, E_HASH_REVOKED);
+    assert!(!hash_info.is_revoked, E_NOTARIZATION_REVOKED);
     
     // Verify not already used
-    assert!(option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+    assert!(option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
 
     // Verify authorized creator
     assert!(tx_context::sender(ctx) == hash_info.authorized_creator, E_UNAUTHORIZED_CREATOR);
     
-    HashClaim { document_hash }
+    HashClaim { notarization_id, document_hash: hash_info.document_hash }
 }
 
 /// Finalize hash usage by binding it to an LTC1 contract ID
-/// Consumes the hot potato
-/// Invariant: witness type must be allowed and hash must have been claimed before through claim_hash and not used yet by another ltc1 contract
 public fun bind_executor<T: drop>(
     registry: &mut NPLEXRegistry,
     claim: HashClaim,
@@ -313,15 +308,15 @@ public fun bind_executor<T: drop>(
     // Verify witness type is allowed
     assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
 
-    let HashClaim { document_hash } = claim;
+    let HashClaim { notarization_id, document_hash: _ } = claim;
     
-    let hash_info = table::borrow_mut(&mut registry.approved_hashes, document_hash);
+    let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     
     // Double check
-    assert!(std::option::is_none(&hash_info.contract_id), E_HASH_ALREADY_USED);
+    assert!(std::option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
     
     // Mark as used
-    std::option::fill(&mut hash_info.contract_id, new_contract_id); // fill will abort if contract_id is already Some
+    std::option::fill(&mut hash_info.contract_id, new_contract_id);
 }
 
 /// Consume a transfer ticket to allow Bond transfer
@@ -366,53 +361,70 @@ public fun consume_sales_toggle_ticket<T: drop>(
 
 // ==================== Idempotent Functions ====================
 
-/// Check if a hash is approved and not revoked
-/// Returns true if hash can be used to create LTC1
-public fun is_valid_hash(
+/// Check if a notarization is approved and not revoked
+public fun is_valid_notarization(
     registry: &NPLEXRegistry,
-    document_hash: u256
+    notarization_id: ID
 ): bool {
-    if (!table::contains(&registry.approved_hashes, document_hash)) {
+    if (!table::contains(&registry.approved_notarizations, notarization_id)) {
         return false
     };
     
-    let hash_info = table::borrow(&registry.approved_hashes, document_hash);
+    let hash_info = table::borrow(&registry.approved_notarizations, notarization_id);
     !hash_info.is_revoked
 }
 
-/// Check if a hash has already been used to create an LTC1 contract
-public fun is_hash_used(
+/// Check if a notarization has already been used
+public fun is_notarization_used(
     registry: &NPLEXRegistry,
-    document_hash: u256
+    notarization_id: ID
 ): bool {
-    if (!table::contains(&registry.approved_hashes, document_hash)) {
+    if (!table::contains(&registry.approved_notarizations, notarization_id)) {
         return false
     };
     
-    let hash_info = table::borrow(&registry.approved_hashes, document_hash);
+    let hash_info = table::borrow(&registry.approved_notarizations, notarization_id);
     option::is_some(&hash_info.contract_id)
 }
 
-/// Check if a hash is revoked, just to check if an hash existed but was revoked (Could be useless)
-public fun is_hash_revoked(
+/// Check if a notarization is revoked
+public fun is_notarization_revoked(
     registry: &NPLEXRegistry,
-    document_hash: u256
+    notarization_id: ID
 ): bool {
-    if (!table::contains(&registry.approved_hashes, document_hash)) {
+    if (!table::contains(&registry.approved_notarizations, notarization_id)) {
         return false
     };
     
-    let hash_info = table::borrow(&registry.approved_hashes, document_hash);
+    let hash_info = table::borrow(&registry.approved_notarizations, notarization_id);
     hash_info.is_revoked
 }
 
-/// Get hash info (for UI/debugging)
-public fun get_hash_info(
+/// Get notarization info (for UI/debugging)
+public fun get_notarization_info(
     registry: &NPLEXRegistry,
-    document_hash: u256
+    notarization_id: ID
 ): HashInfo {
-    *table::borrow(&registry.approved_hashes, document_hash)
-    //we could unpack the struct and return the values but I think this is better for security, you have to explicitly write (a getter) what you want to be accessible
+    *table::borrow(&registry.approved_notarizations, notarization_id)
+}
+
+/// Get ALL registered notarization info
+public fun get_all_notarizations_info(registry: &NPLEXRegistry): vector<HashInfo> {
+    let mut list = vector::empty();
+    let len = vector::length(&registry.registered_notarization_ids);
+    let mut i = 0;
+    while (i < len) {
+        let id = *vector::borrow(&registry.registered_notarization_ids, i);
+        let info = *table::borrow(&registry.approved_notarizations, id);
+        vector::push_back(&mut list, info);
+        i = i + 1;
+    };
+    list
+}
+
+/// Accessor for HashInfo.document_hash
+public fun hash_document_hash(info: &HashInfo): u256 {
+    info.document_hash
 }
 
 /// Accessor for HashInfo.contract_id
@@ -440,21 +452,6 @@ public fun hash_authorized_creator(info: &HashInfo): address {
     info.authorized_creator
 }
 
-/// Get ALL registered hash info (View Function UI/debugging)
-/// Iterates through the stored keys and returns the full list of info structs
-public fun get_all_hashes_info(registry: &NPLEXRegistry): vector<HashInfo> {
-    let mut list = vector::empty();
-    let len = vector::length(&registry.registered_hash_keys);
-    let mut i = 0;
-    while (i < len) {
-        let key = *vector::borrow(&registry.registered_hash_keys, i);
-        let info = *table::borrow(&registry.approved_hashes, key);
-        vector::push_back(&mut list, info);
-        i = i + 1;
-    };
-    list
-}
-
 // ==================== Testing Functions ====================
 
 #[test_only]
@@ -474,5 +471,5 @@ public fun is_sales_toggle_authorized(registry: &NPLEXRegistry, contract_id: ID)
 
 #[test_only]
 public fun burn_hash_claim(claim: HashClaim) {
-    let HashClaim { document_hash: _ } = claim;
+    let HashClaim { notarization_id: _, document_hash: _ } = claim;
 }
