@@ -13,6 +13,7 @@ use iota::table::{Self, Table};
 use iota::dynamic_field as df;
 use iota::package;
 use iota::clock::{Self, Clock};
+use iota_notarization::notarization;
 
 // ==================== Error Codes ====================
 
