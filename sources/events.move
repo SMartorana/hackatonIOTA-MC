@@ -45,7 +45,7 @@ module nplex::events {
 
     // ==================== Emitters ====================
 
-    public fun emit_contract_created(
+    public(package) fun emit_contract_created(
         package_id: iota::object::ID,
         creator: address,
         nominal_value: u64
@@ -57,7 +57,7 @@ module nplex::events {
         });
     }
 
-    public fun emit_token_purchased(
+    public(package) fun emit_token_purchased(
         package_id: iota::object::ID,
         investor: address,
         amount: u64,
@@ -71,7 +71,7 @@ module nplex::events {
         });
     }
 
-    public fun emit_revenue_deposited(
+    public(package) fun emit_revenue_deposited(
         package_id: iota::object::ID,
         amount: u64
     ) {
@@ -81,7 +81,7 @@ module nplex::events {
         });
     }
 
-    public fun emit_vault_created(
+    public(package) fun emit_vault_created(
         vault_id: iota::object::ID,
         package_id: iota::object::ID,
         fraction_type: std::ascii::String,
@@ -97,7 +97,7 @@ module nplex::events {
         });
     }
 
-    public fun emit_vault_empty(
+    public(package) fun emit_vault_empty(
         vault_id: iota::object::ID,
         fraction_type: std::ascii::String,
     ) {
