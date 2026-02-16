@@ -80,10 +80,10 @@ public struct NPLEXRegistry has key {
     id: UID,
     /// Maps Notarization ID -> package information
     approved_notarizations: Table<ID, NotarizationInfo>,
-    /// Maps Bond ID -> Authorized New Owner Address
-    authorized_transfers: Table<ID, address>,
-    /// Maps LTC1Package ID -> Target sales state (true = open, false = closed)
-    authorized_sales_toggles: Table<ID, bool>,
+    /// Maps Bond ID -> Notarized transfer authorization
+    authorized_transfers: Table<ID, NotarizedTransfer>,
+    /// Maps LTC1Package ID -> Notarized sales toggle authorization
+    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>,
     /// List of registered notarization IDs (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
     registered_notarization_ids: vector<ID>,
@@ -105,6 +105,22 @@ public struct NotarizationInfo has store, copy, drop {
     contract_id: option::Option<ID>,
     /// Only this address is authorized to create a contract with this notarization
     authorized_creator: address,
+}
+
+/// Notarized transfer authorization — ties a bond transfer to a specific notarization
+public struct NotarizedTransfer has store, copy, drop {
+    /// The notarization backing this transfer authorization
+    notarization_id: ID,
+    /// The authorized recipient of the bond
+    new_owner: address,
+}
+
+/// Notarized sales toggle authorization — ties a sales state change to a specific notarization
+public struct NotarizedSaleToggle has store, copy, drop {
+    /// The notarization backing this sales toggle authorization
+    notarization_id: ID,
+    /// The target sales state (true = open, false = closed)
+    target_state: bool,
 }
 
 // ==================== Initialization ====================
@@ -246,31 +262,51 @@ public entry fun remove_executor<T>(
 
 /// Authorize a Bond Transfer for a specific contract
 /// Invariant: only callable by NPLEX admin
+/// The notarization_id must reference a valid, non-revoked notarization
 public entry fun authorize_transfer(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     contract_id: ID,
-    new_owner: address
+    new_owner: address,
+    notarization_id: ID
 ) {
+    // Validate the notarization exists and is not revoked
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let info = table::borrow(&registry.approved_notarizations, notarization_id);
+    assert!(!info.is_revoked, E_NOTARIZATION_REVOKED);
+
     if (table::contains(&registry.authorized_transfers, contract_id)) {
         table::remove(&mut registry.authorized_transfers, contract_id);
     };
-    table::add(&mut registry.authorized_transfers, contract_id, new_owner);
+    table::add(&mut registry.authorized_transfers, contract_id, NotarizedTransfer {
+        notarization_id,
+        new_owner,
+    });
 }
 
 /// Authorize a Sales Toggle for a specific contract
 /// Invariant: only callable by NPLEX admin
 /// new_state: true = open sales, false = close sales
+/// The notarization_id must reference a valid, non-revoked notarization
 public entry fun authorize_sales_toggle(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     contract_id: ID,
-    new_state: bool
+    new_state: bool,
+    notarization_id: ID
 ) {
+    // Validate the notarization exists and is not revoked
+    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let info = table::borrow(&registry.approved_notarizations, notarization_id);
+    assert!(!info.is_revoked, E_NOTARIZATION_REVOKED);
+
     if (table::contains(&registry.authorized_sales_toggles, contract_id)) {
         table::remove(&mut registry.authorized_sales_toggles, contract_id);
     };
-    table::add(&mut registry.authorized_sales_toggles, contract_id, new_state);
+    table::add(&mut registry.authorized_sales_toggles, contract_id, NotarizedSaleToggle {
+        notarization_id,
+        target_state: new_state,
+    });
 }
 
 // ==================== Validation Functions ====================
@@ -320,7 +356,8 @@ public fun bind_executor<T: drop>(
 }
 
 /// Consume a transfer ticket to allow Bond transfer
-/// Validates that the Caller (via Witness) is authorized and the Transfer is approved by NPLEX
+/// Validates that the Caller (via Witness) is authorized, the Transfer is approved by NPLEX,
+/// and the backing notarization is still valid (not revoked)
 public fun consume_transfer_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
     bond_id: ID,
@@ -334,15 +371,21 @@ public fun consume_transfer_ticket<T: drop>(
     assert!(table::contains(&registry.authorized_transfers, bond_id), E_TRANSFER_NOT_AUTHORIZED);
     
     // 3. Verify Recipient matches
-    let authorized_recipient = *table::borrow(&registry.authorized_transfers, bond_id);
-    assert!(authorized_recipient == new_owner, E_TRANSFER_NOT_AUTHORIZED);
+    let authorization = *table::borrow(&registry.authorized_transfers, bond_id);
+    assert!(authorization.new_owner == new_owner, E_TRANSFER_NOT_AUTHORIZED);
 
-    // 4. Consume Ticket
+    // 4. Verify backing notarization is still valid
+    assert!(table::contains(&registry.approved_notarizations, authorization.notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let notarization_info = table::borrow(&registry.approved_notarizations, authorization.notarization_id);
+    assert!(!notarization_info.is_revoked, E_NOTARIZATION_REVOKED);
+
+    // 5. Consume Ticket
     table::remove(&mut registry.authorized_transfers, bond_id);
 }
 
 /// Consume a sales toggle ticket
-/// Validates that the Caller (via Witness) is authorized and the toggle is approved by NPLEX
+/// Validates that the Caller (via Witness) is authorized, the toggle is approved by NPLEX,
+/// and the backing notarization is still valid (not revoked)
 /// Returns the target sales state (true = open, false = closed)
 public fun consume_sales_toggle_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
@@ -355,8 +398,15 @@ public fun consume_sales_toggle_ticket<T: drop>(
     // 2. Verify Toggle is Authorized
     assert!(table::contains(&registry.authorized_sales_toggles, contract_id), E_SALES_TOGGLE_NOT_AUTHORIZED);
 
-    // 3. Consume Ticket and return target state
-    table::remove(&mut registry.authorized_sales_toggles, contract_id)
+    // 3. Read authorization and verify backing notarization
+    let authorization = *table::borrow(&registry.authorized_sales_toggles, contract_id);
+    assert!(table::contains(&registry.approved_notarizations, authorization.notarization_id), E_NOTARIZATION_NOT_APPROVED);
+    let notarization_info = table::borrow(&registry.approved_notarizations, authorization.notarization_id);
+    assert!(!notarization_info.is_revoked, E_NOTARIZATION_REVOKED);
+
+    // 4. Consume Ticket and return target state
+    table::remove(&mut registry.authorized_sales_toggles, contract_id);
+    authorization.target_state
 }
 
 // ==================== Idempotent Functions ====================

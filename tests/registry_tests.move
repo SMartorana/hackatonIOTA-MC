@@ -425,7 +425,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, verified_notarization_id());
             
             // Assert: Ticket Created
             assert!(registry::is_transfer_authorized(&registry, package_id), 1);
@@ -466,7 +466,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner, verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -496,7 +496,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner);
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -609,7 +609,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false, verified_notarization_id());
             
             // Assert: Ticket Created
             assert!(registry::is_sales_toggle_authorized(&registry, contract_id), 1);
@@ -650,7 +650,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false);
+            registry::authorize_sales_toggle(&mut registry, &admin_cap, contract_id, false, verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
