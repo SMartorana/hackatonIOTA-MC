@@ -1,12 +1,11 @@
 [package]
 name = "nplex"
-edition = "2024"
+edition = "2024.beta"
 
 [dependencies.IotaNotarization]
 git = "https://github.com/iotaledger/notarization.git"
 subdir = "notarization-move"
-rev = "f589f65c9a5d1ad3a712fda519e5a485b67081ef"
+rev = "e694e2ee8f2f9f0b9b03b843a24ff0f7bcff2930"
 
 [addresses]
 nplex = "0x0"
-

@@ -86,6 +86,7 @@ public struct NPLEXRegistry has key {
     authorized_sales_toggles: Table<ID, NotarizedSaleToggle>,
     /// List of registered notarization IDs (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
+    /// TODO: Remove this and keeps these offchain or use events instead Set<RegisteredEvents> - Set<RevokedEvents> = Set<CurrentNotarizations>
     registered_notarization_ids: vector<ID>,
     // Dynamic Fields are used for allowed_executors
     // Key: ExecutorKey<T> -> Value: bool (true)
