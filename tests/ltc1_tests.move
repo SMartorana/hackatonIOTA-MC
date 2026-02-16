@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Federico Abrignani. All rights reserved.
 /// Unit tests for LTC1
-/// Test integration with registry and core ltc1 features
+/// Test integration with registry and core ltc1 features (notarization-based API)
 
 #[test_only]
 module nplex::ltc1_tests {
@@ -9,8 +9,11 @@ module nplex::ltc1_tests {
     use iota::test_scenario::{Self, Scenario, next_tx, ctx};
     use iota::coin::{Self, Coin};
     use iota::iota::IOTA;
-    use iota::clock;
+    use iota::clock::{Self};
     use std::string::{Self};
+    use iota_notarization::notarization;
+    use iota_notarization::dynamic_notarization;
+    use iota_notarization::timelock;
 
     // Test Users
     const ADMIN: address = @0xAD;
@@ -33,22 +36,85 @@ module nplex::ltc1_tests {
         next_tx(scenario, ADMIN);
         registry::init_for_testing(ctx(scenario));
 
-        // 2. Register Hash & Authorize LTC1
+        // 2. Authorize LTC1 executor (notarization registration is done per-test)
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
-        let clock = clock::create_for_testing(ctx(scenario));
 
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(scenario));
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
-        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }
 
     fun mint_coins(amount: u64, scenario: &mut Scenario): Coin<IOTA> {
         coin::mint_for_testing<IOTA>(amount, ctx(scenario))
+    }
+
+    /// Helper: creates a real Notarization<u256> object, registers it in the registry,
+    /// then calls the production create_contract.
+    /// Flow: ADMIN tx (create notarization + register) → OWNER tx (create_contract)
+    fun create_contract_with_notarization(scenario: &mut Scenario): ID {
+        // Step 1: ADMIN creates notarization object and registers its real ID
+        next_tx(scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+            let clock = clock::create_for_testing(ctx(scenario));
+
+            // Create a real Notarization<u256> object
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(scenario)
+            );
+
+            // Register the real notarization ID
+            let real_id = object::id(&notarization_obj);
+            registry::register_notarization(
+                &mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(scenario)
+            );
+
+            dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(scenario));
+
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(scenario, admin_cap);
+        };
+
+        // Step 2: OWNER uses the notarization to create the contract
+        next_tx(scenario, OWNER);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
+            let clock = clock::create_for_testing(ctx(scenario));
+
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                &notarization_obj,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(scenario)
+            );
+
+            notarization::destroy(notarization_obj, &clock);
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
+
+        // Step 3: Retrieve package_id from the OwnerBond
+        next_tx(scenario, OWNER);
+        let package_id = {
+            let bond = test_scenario::take_from_sender<OwnerBond>(scenario);
+            let id = ltc1::bond_package_id(&bond);
+            test_scenario::return_to_sender(scenario, bond);
+            id
+        };
+        package_id
     }
 
     /// Helper: Admin authorizes + executes sales open for a package
@@ -89,37 +155,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract (Owner)
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 1.5 Get Package ID from Registry
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 1.6 Open Sales
         open_sales(&mut scenario, package_id);
@@ -281,37 +317,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract (Owner) with 50% split (Max Sellable = 500)
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS, // 5000
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 1.5 Get Package ID from Registry
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 1.6 Open Sales
         open_sales(&mut scenario, package_id);
@@ -343,8 +349,8 @@ module nplex::ltc1_tests {
     // Scenario: Admin forgets to register document hash. Creator calls create_contract.
     // System must reject the creation attempt.
     #[test]
-    #[expected_failure(abort_code = registry::E_HASH_NOT_APPROVED)]
-    fun test_create_contract_not_registered_hash() {
+    #[expected_failure(abort_code = registry::E_NOTARIZATION_NOT_APPROVED)]
+    fun test_create_contract_not_registered_notarization() {
         let mut scenario = test_scenario::begin(ADMIN);
         
         // Setup: Init registry, Authorize Witness, BUT DO NOT Register Hash
@@ -358,23 +364,26 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
 
-            // ONLY Authorize Witness
+            // ONLY Authorize Witness (no notarization registered)
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // Try to create contract (Should Fail)
+        // Try to create contract (Should Fail) - create notarization but don't register it
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -383,6 +392,7 @@ module nplex::ltc1_tests {
                 &clock,
                 ctx(&mut scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
@@ -413,24 +423,30 @@ module nplex::ltc1_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
 
-            // ONLY Register Hash
-            registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
+            // Create real notarization object and register it, but DO NOT authorize witness
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
+            let real_id = object::id(&notarization_obj);
+            registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
+            dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
 
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // Try to create contract (Should Fail)
+        // Try to create contract (Should Fail - witness not authorized)
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -439,6 +455,7 @@ module nplex::ltc1_tests {
                 &clock,
                 ctx(&mut scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
@@ -457,37 +474,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract (Owner)
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 2. Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 3. Authorize Transfer (Admin)
         next_tx(&mut scenario, ADMIN);
@@ -544,37 +531,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract (Owner)
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 1.5 Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 1.6 Open Sales
         open_sales(&mut scenario, package_id);
@@ -635,37 +592,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract (Owner)
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 1.5 Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 1.6 Open Sales
         open_sales(&mut scenario, package_id);
@@ -861,11 +788,14 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 100, // TOO LOW (Min is 1B)
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -874,6 +804,7 @@ module nplex::ltc1_tests {
                 &clock,
                 ctx(&mut scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
@@ -894,11 +825,14 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
+                &notarization_obj,
                 TOTAL_SUPPLY,
                 TOKEN_PRICE,
                 NOMINAL_VALUE,
@@ -907,6 +841,7 @@ module nplex::ltc1_tests {
                 &clock,
                 ctx(&mut scenario)
             );
+            notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
@@ -925,36 +860,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract & Get ID
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 1.6 Open Sales
         open_sales(&mut scenario, package_id);
@@ -1033,53 +939,60 @@ module nplex::ltc1_tests {
     fun test_update_authorized_creator() {
         let mut scenario = test_scenario::begin(ADMIN);
         
-        // 1. Initial Setup: Register Hash with OWNER (A1)
+        // 1. Initial Setup: Create notarization, register with OWNER (A1)
         next_tx(&mut scenario, ADMIN);
         registry::init_for_testing(ctx(&mut scenario));
         
         next_tx(&mut scenario, ADMIN);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-        let clock = clock::create_for_testing(ctx(&mut scenario));
-        
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
-        registry::add_executor<LTC1Witness>(&mut registry, &admin_cap); // Authorize LTC1
-        
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(registry);
-        test_scenario::return_to_sender(&scenario, admin_cap);
-
-        // 2. Update Authorized Creator to NEW_OWNER (A2)
-        next_tx(&mut scenario, ADMIN);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-        
-        registry::update_authorized_creator(&mut registry, &admin_cap, DOCUMENT_HASH, NEW_OWNER);
-        
-        test_scenario::return_shared(registry);
-        test_scenario::return_to_sender(&scenario, admin_cap);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            
+            // Create real notarization object
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
+            let real_id = object::id(&notarization_obj);
+            
+            registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
+            registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+            
+            // 2. Update Authorized Creator to NEW_OWNER (A2)
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            
+            dynamic_notarization::transfer(notarization_obj, NEW_OWNER, &clock, ctx(&mut scenario));
+            
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
 
         // 3. T1: NEW_OWNER (A2) creates contract -> Success
         next_tx(&mut scenario, NEW_OWNER);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let clock = clock::create_for_testing(ctx(&mut scenario));
-        
-        ltc1::create_contract<IOTA>(
-            &mut registry,
-            string::utf8(b"LTC1 Package"),
-            DOCUMENT_HASH,
-            object::id_from_address(@0xA11), // Dummy Notary ID
-            TOTAL_SUPPLY,
-            TOKEN_PRICE,
-            NOMINAL_VALUE,
-            SPLIT_BPS,
-            string::utf8(b"ipfs://metadata"),
-            &clock,
-            ctx(&mut scenario)
-        );
-        
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(registry);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                &notarization_obj,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(&mut scenario)
+            );
+            
+            notarization::destroy(notarization_obj, &clock);
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
         test_scenario::end(scenario);
     }
 
@@ -1088,53 +1001,60 @@ module nplex::ltc1_tests {
     fun test_update_authorized_creator_failure_old_owner() {
         let mut scenario = test_scenario::begin(ADMIN);
         
-        // 1. Initial Setup: Register Hash with OWNER (A1)
+        // 1. Initial Setup: Create notarization, register with OWNER (A1)
         next_tx(&mut scenario, ADMIN);
         registry::init_for_testing(ctx(&mut scenario));
         
         next_tx(&mut scenario, ADMIN);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-        let clock = clock::create_for_testing(ctx(&mut scenario));
-        
-        registry::register_hash(&mut registry, &admin_cap, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
-        registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
-        
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(registry);
-        test_scenario::return_to_sender(&scenario, admin_cap);
-
-        // 2. Update Authorized Creator to NEW_OWNER (A2)
-        next_tx(&mut scenario, ADMIN);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-        
-        registry::update_authorized_creator(&mut registry, &admin_cap, DOCUMENT_HASH, NEW_OWNER);
-        
-        test_scenario::return_shared(registry);
-        test_scenario::return_to_sender(&scenario, admin_cap);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            
+            // Create real notarization object
+            let state = notarization::new_state_from_generic<u256>(DOCUMENT_HASH, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
+            let real_id = object::id(&notarization_obj);
+            
+            registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
+            registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+            
+            // Update Authorized Creator to NEW_OWNER (A2)
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            
+            dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
+            
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
 
         // 3. T2: OWNER (A1) tries to create contract -> Error
         next_tx(&mut scenario, OWNER);
-        let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-        let clock = clock::create_for_testing(ctx(&mut scenario));
-        
-        ltc1::create_contract<IOTA>(
-            &mut registry,
-            string::utf8(b"LTC1 Package"),
-            DOCUMENT_HASH,
-            object::id_from_address(@0xA11), // Dummy Notary ID
-            TOTAL_SUPPLY,
-            TOKEN_PRICE,
-            NOMINAL_VALUE,
-            SPLIT_BPS,
-            string::utf8(b"ipfs://metadata"),
-            &clock,
-            ctx(&mut scenario)
-        );
-        
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(registry);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            
+            ltc1::create_contract<IOTA>(
+                &mut registry,
+                string::utf8(b"LTC1 Package"),
+                &notarization_obj,
+                TOTAL_SUPPLY,
+                TOKEN_PRICE,
+                NOMINAL_VALUE,
+                SPLIT_BPS,
+                string::utf8(b"ipfs://metadata"),
+                &clock,
+                ctx(&mut scenario)
+            );
+            
+            notarization::destroy(notarization_obj, &clock);
+            clock::destroy_for_testing(clock);
+            test_scenario::return_shared(registry);
+        };
         test_scenario::end(scenario);
     }
 
@@ -1150,37 +1070,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 2. Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 3. Admin authorizes close sales
         next_tx(&mut scenario, ADMIN);
@@ -1227,37 +1117,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 2. Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 3. Admin closes sales
         next_tx(&mut scenario, ADMIN);
@@ -1331,37 +1191,7 @@ module nplex::ltc1_tests {
         setup_registry(&mut scenario);
 
         // 1. Create Contract
-        next_tx(&mut scenario, OWNER);
-        {
-            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let clock = clock::create_for_testing(ctx(&mut scenario));
-            ltc1::create_contract<IOTA>(
-                &mut registry,
-                string::utf8(b"LTC1 Package"),
-                DOCUMENT_HASH,
-                object::id_from_address(@0xA11), // Dummy Notary ID
-                TOTAL_SUPPLY,
-                TOKEN_PRICE,
-                NOMINAL_VALUE,
-                SPLIT_BPS,
-                string::utf8(b"ipfs://metadata"),
-                &clock,
-                ctx(&mut scenario)
-            );
-            clock::destroy_for_testing(clock);
-            test_scenario::return_shared(registry);
-        };
-
-        // 2. Get Package ID
-        next_tx(&mut scenario, ADMIN);
-        let package_id = {
-            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let info = registry::get_hash_info(&registry, DOCUMENT_HASH);
-            let contract_id_opt = registry::hash_contract_id(&info);
-            let id = std::option::extract(&mut std::option::some(std::option::destroy_some(contract_id_opt)));
-            test_scenario::return_shared(registry);
-            id
-        };
+        let package_id = create_contract_with_notarization(&mut scenario);
 
         // 2.5 Open Sales first
         open_sales(&mut scenario, package_id);

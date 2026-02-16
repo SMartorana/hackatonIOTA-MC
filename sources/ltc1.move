@@ -552,3 +552,10 @@ public(package) fun add_fraction_balance(
     token.balance = token.balance + balance;
     token.claimed_revenue = token.claimed_revenue + claimed_revenue;
 }
+
+// ==================== Testing Functions ====================
+
+#[test_only]
+public fun bond_package_id(bond: &OwnerBond): ID {
+    bond.package_id
+}
