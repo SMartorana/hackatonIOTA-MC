@@ -78,11 +78,11 @@ public struct ExecutorKey<phantom T> has copy, drop, store {}
 /// Shared object - anyone can read, only admin can mutate
 public struct NPLEXRegistry has key {
     id: UID,
-    /// Maps notarization ID -> package information
+    /// Maps Notarization ID -> package information
     approved_notarizations: Table<ID, NotarizationInfo>,
-    /// Maps Contract ID -> Authorized New Owner Address
+    /// Maps Bond ID -> Authorized New Owner Address
     authorized_transfers: Table<ID, address>,
-    /// Maps Contract ID -> Target sales state (true = open, false = closed)
+    /// Maps LTC1Package ID -> Target sales state (true = open, false = closed)
     authorized_sales_toggles: Table<ID, bool>,
     /// List of registered notarization IDs (Iteratable index for Frontend)
     /// Only required due to the fact that Iota::table does not allow key iteration
@@ -323,7 +323,7 @@ public fun bind_executor<T: drop>(
 /// Validates that the Caller (via Witness) is authorized and the Transfer is approved by NPLEX
 public fun consume_transfer_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
-    contract_id: ID,
+    bond_id: ID,
     new_owner: address,
     _witness: T
 ) {
@@ -331,14 +331,14 @@ public fun consume_transfer_ticket<T: drop>(
     assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
 
     // 2. Verify Transfer is Authorized
-    assert!(table::contains(&registry.authorized_transfers, contract_id), E_TRANSFER_NOT_AUTHORIZED);
+    assert!(table::contains(&registry.authorized_transfers, bond_id), E_TRANSFER_NOT_AUTHORIZED);
     
     // 3. Verify Recipient matches
-    let authorized_recipient = *table::borrow(&registry.authorized_transfers, contract_id);
+    let authorized_recipient = *table::borrow(&registry.authorized_transfers, bond_id);
     assert!(authorized_recipient == new_owner, E_TRANSFER_NOT_AUTHORIZED);
 
     // 4. Consume Ticket
-    table::remove(&mut registry.authorized_transfers, contract_id);
+    table::remove(&mut registry.authorized_transfers, bond_id);
 }
 
 /// Consume a sales toggle ticket
