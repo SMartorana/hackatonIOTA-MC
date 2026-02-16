@@ -24,7 +24,6 @@ module nplex::ltc1_tests {
 
     // Test Data
     const DOCUMENT_HASH: u256 = 123456789;
-    const AUTHORIZATION_HASH: u256 = 987654321;
     const TOTAL_SUPPLY: u64 = 1_000_000_000;
     const TOKEN_PRICE: u64 = 1_000; // (0.000001 IOTA)
     const NOMINAL_VALUE: u64 = 1_000_000_000;
@@ -40,21 +39,13 @@ module nplex::ltc1_tests {
         next_tx(scenario, ADMIN);
         registry::init_for_testing(ctx(scenario));
 
-        // 2. Authorize LTC1 executor + register authorization notarization
+        // 2. Authorize LTC1 executor
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
-        let clock = clock::create_for_testing(ctx(scenario));
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
-        // Register a dedicated notarization for backing authorize_transfer / authorize_sales_toggle
-        registry::register_notarization(
-            &mut registry, &admin_cap, authorization_notarization_id(),
-            AUTHORIZATION_HASH, ADMIN, &clock, ctx(scenario)
-        );
-
-        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }

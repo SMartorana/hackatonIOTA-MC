@@ -70,17 +70,9 @@ module nplex::fractional_tests {
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
-        let clock = clock::create_for_testing(ctx(scenario));
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
-        // Register a dedicated notarization for backing authorize_transfer / authorize_sales_toggle
-        registry::register_notarization(
-            &mut registry, &admin_cap, authorization_notarization_id(),
-            AUTHORIZATION_HASH, ADMIN, &clock, ctx(scenario)
-        );
-
-        clock::destroy_for_testing(clock);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }

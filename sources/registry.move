@@ -176,6 +176,8 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
 // ==================== Admin Functions ====================
 
 /// Register a new approved notarization in the registry
+/// These are the documents which are used only for create_contract
+/// Notarizations for other approvals are managed in other tables not in approved_notarizations
 public entry fun register_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
@@ -262,7 +264,6 @@ public entry fun remove_executor<T>(
 
 /// Authorize a Bond Transfer for a specific contract
 /// Invariant: only callable by NPLEX admin
-/// The notarization_id must reference a valid, non-revoked notarization
 public entry fun authorize_transfer(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
@@ -270,11 +271,6 @@ public entry fun authorize_transfer(
     new_owner: address,
     notarization_id: ID
 ) {
-    // Validate the notarization exists and is not revoked
-    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
-    let info = table::borrow(&registry.approved_notarizations, notarization_id);
-    assert!(!info.is_revoked, E_NOTARIZATION_REVOKED);
-
     if (table::contains(&registry.authorized_transfers, contract_id)) {
         table::remove(&mut registry.authorized_transfers, contract_id);
     };
@@ -287,7 +283,6 @@ public entry fun authorize_transfer(
 /// Authorize a Sales Toggle for a specific contract
 /// Invariant: only callable by NPLEX admin
 /// new_state: true = open sales, false = close sales
-/// The notarization_id must reference a valid, non-revoked notarization
 public entry fun authorize_sales_toggle(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
@@ -295,11 +290,6 @@ public entry fun authorize_sales_toggle(
     new_state: bool,
     notarization_id: ID
 ) {
-    // Validate the notarization exists and is not revoked
-    assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
-    let info = table::borrow(&registry.approved_notarizations, notarization_id);
-    assert!(!info.is_revoked, E_NOTARIZATION_REVOKED);
-
     if (table::contains(&registry.authorized_sales_toggles, contract_id)) {
         table::remove(&mut registry.authorized_sales_toggles, contract_id);
     };
@@ -357,7 +347,6 @@ public fun bind_executor<T: drop>(
 
 /// Consume a transfer ticket to allow Bond transfer
 /// Validates that the Caller (via Witness) is authorized, the Transfer is approved by NPLEX,
-/// and the backing notarization is still valid (not revoked)
 public fun consume_transfer_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
     bond_id: ID,
@@ -374,18 +363,12 @@ public fun consume_transfer_ticket<T: drop>(
     let authorization = *table::borrow(&registry.authorized_transfers, bond_id);
     assert!(authorization.new_owner == new_owner, E_TRANSFER_NOT_AUTHORIZED);
 
-    // 4. Verify backing notarization is still valid
-    assert!(table::contains(&registry.approved_notarizations, authorization.notarization_id), E_NOTARIZATION_NOT_APPROVED);
-    let notarization_info = table::borrow(&registry.approved_notarizations, authorization.notarization_id);
-    assert!(!notarization_info.is_revoked, E_NOTARIZATION_REVOKED);
-
-    // 5. Consume Ticket
+    // 4. Consume Ticket
     table::remove(&mut registry.authorized_transfers, bond_id);
 }
 
 /// Consume a sales toggle ticket
 /// Validates that the Caller (via Witness) is authorized, the toggle is approved by NPLEX,
-/// and the backing notarization is still valid (not revoked)
 /// Returns the target sales state (true = open, false = closed)
 public fun consume_sales_toggle_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
@@ -398,15 +381,8 @@ public fun consume_sales_toggle_ticket<T: drop>(
     // 2. Verify Toggle is Authorized
     assert!(table::contains(&registry.authorized_sales_toggles, contract_id), E_SALES_TOGGLE_NOT_AUTHORIZED);
 
-    // 3. Read authorization and verify backing notarization
-    let authorization = *table::borrow(&registry.authorized_sales_toggles, contract_id);
-    assert!(table::contains(&registry.approved_notarizations, authorization.notarization_id), E_NOTARIZATION_NOT_APPROVED);
-    let notarization_info = table::borrow(&registry.approved_notarizations, authorization.notarization_id);
-    assert!(!notarization_info.is_revoked, E_NOTARIZATION_REVOKED);
-
-    // 4. Consume Ticket and return target state
-    table::remove(&mut registry.authorized_sales_toggles, contract_id);
-    authorization.target_state
+    // 3. Consume Ticket and return target state
+    table::remove(&mut registry.authorized_sales_toggles, contract_id).target_state
 }
 
 // ==================== Idempotent Functions ====================
