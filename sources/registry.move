@@ -105,6 +105,8 @@ public struct NotarizationInfo has store, copy, drop {
     /// ID of LTC1 contract created with this notarization (None if not yet used)
     contract_id: option::Option<ID>,
     /// Only this address is authorized to create a contract with this notarization
+    /// This is potentially useless if the notarization we use is not transferable
+    /// Ideally the user creates it and it cannot be transfered, I am leaving this like this for now
     authorized_creator: address,
 }
 
