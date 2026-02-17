@@ -1,6 +1,6 @@
 build
 Move.lock
-fake_eurc/
+_deps/
 deployed_addresses.json
 MIDDLEWARE_GUIDE.md
 MIGRATION_REPORT.md
