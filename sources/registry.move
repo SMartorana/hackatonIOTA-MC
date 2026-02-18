@@ -8,6 +8,7 @@
 module nplex::registry;
 
 use nplex::display_utils;
+use nplex::events;
 
 use iota::table::{Self, Table};
 use iota::dynamic_field as df;
@@ -83,13 +84,7 @@ public struct NPLEXRegistry has key {
     /// Maps Bond ID -> Notarized transfer authorization
     authorized_transfers: Table<ID, NotarizedTransfer>,
     /// Maps LTC1Package ID -> Notarized sales toggle authorization
-    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>,
-    /// List of registered notarization IDs (Iteratable index for Frontend)
-    /// Only required due to the fact that Iota::table does not allow key iteration
-    /// TODO: Remove this and keeps these offchain or use events instead Set<RegisteredEvents> - Set<RevokedEvents> = Set<CurrentNotarizations>
-    registered_notarization_ids: vector<ID>,
-    // Dynamic Fields are used for allowed_executors
-    // Key: ExecutorKey<T> -> Value: bool (true)
+    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>
 }
 
 /// Information about an approved notarization
@@ -166,7 +161,6 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
         approved_notarizations: table::new(ctx),
         authorized_transfers: table::new(ctx),
         authorized_sales_toggles: table::new(ctx),
-        registered_notarization_ids: vector::empty(),
     };
     transfer::share_object(registry);
 
@@ -202,7 +196,14 @@ public entry fun register_notarization(
     };
     
     table::add(&mut registry.approved_notarizations, notarization_id, notarization_info);
-    vector::push_back(&mut registry.registered_notarization_ids, notarization_id);
+
+    events::emit_notarization_registered(
+        notarization_id,
+        document_hash,
+        authorized_creator,
+        tx_context::sender(ctx),
+        clock::timestamp_ms(clock),
+    );
 }
 
 /// Update the authorized creator for a registered notarization
@@ -217,6 +218,8 @@ public entry fun update_authorized_creator(
     assert!(option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
     
     hash_info.authorized_creator = new_creator;
+
+    events::emit_authorized_creator_updated(notarization_id, new_creator);
 }
 
 /// Revoke a previously approved notarization
@@ -229,6 +232,8 @@ public entry fun revoke_notarization(
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(!hash_info.is_revoked, E_NOTARIZATION_ALREADY_REVOKED);
     hash_info.is_revoked = true;
+
+    events::emit_notarization_revoked(notarization_id);
 }
 
 /// Un-revoke a notarization
@@ -241,6 +246,8 @@ public entry fun unrevoke_notarization(
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(hash_info.is_revoked, E_NOTARIZATION_NOT_REVOKED);
     hash_info.is_revoked = false;
+
+    events::emit_notarization_unrevoked(notarization_id);
 }
 
 /// Add an allowed executor module
@@ -251,6 +258,7 @@ public entry fun add_executor<T>(
 ) {
     if (!df::exists_(&registry.id, ExecutorKey<T> {})) {
         df::add(&mut registry.id, ExecutorKey<T> {}, true);
+        events::emit_executor_added(std::type_name::get<T>().into_string());
     };
 }
 
@@ -262,6 +270,7 @@ public entry fun remove_executor<T>(
 ) {
     if (df::exists_(&registry.id, ExecutorKey<T> {})) {
         let _: bool = df::remove(&mut registry.id, ExecutorKey<T> {});
+        events::emit_executor_removed(std::type_name::get<T>().into_string());
     };
 }
 
@@ -281,6 +290,8 @@ public entry fun authorize_transfer(
         notarization_id,
         new_owner,
     });
+
+    events::emit_transfer_authorized(contract_id, new_owner, notarization_id);
 }
 
 /// Authorize a Sales Toggle for a specific contract
@@ -300,6 +311,8 @@ public entry fun authorize_sales_toggle(
         notarization_id,
         target_state: new_state,
     });
+
+    events::emit_sales_toggle_authorized(contract_id, new_state, notarization_id);
 }
 
 // ==================== Validation Functions ====================
@@ -368,6 +381,8 @@ public fun consume_transfer_ticket<T: drop>(
 
     // 4. Consume Ticket
     table::remove(&mut registry.authorized_transfers, bond_id);
+
+    events::emit_transfer_consumed(bond_id, new_owner);
 }
 
 /// Consume a sales toggle ticket
@@ -385,7 +400,11 @@ public fun consume_sales_toggle_ticket<T: drop>(
     assert!(table::contains(&registry.authorized_sales_toggles, contract_id), E_SALES_TOGGLE_NOT_AUTHORIZED);
 
     // 3. Consume Ticket and return target state
-    table::remove(&mut registry.authorized_sales_toggles, contract_id).target_state
+    let target_state = table::remove(&mut registry.authorized_sales_toggles, contract_id).target_state;
+
+    events::emit_sales_toggle_consumed(contract_id, target_state);
+
+    target_state
 }
 
 // ==================== Idempotent Functions ====================
@@ -435,20 +454,6 @@ public fun get_notarization_info(
     notarization_id: ID
 ): NotarizationInfo {
     *table::borrow(&registry.approved_notarizations, notarization_id)
-}
-
-/// Get ALL registered notarization info
-public fun get_all_notarizations_info(registry: &NPLEXRegistry): vector<NotarizationInfo> {
-    let mut list = vector::empty();
-    let len = vector::length(&registry.registered_notarization_ids);
-    let mut i = 0;
-    while (i < len) {
-        let id = *vector::borrow(&registry.registered_notarization_ids, i);
-        let info = *table::borrow(&registry.approved_notarizations, id);
-        vector::push_back(&mut list, info);
-        i = i + 1;
-    };
-    list
 }
 
 /// Accessor for NotarizationInfo.document_hash

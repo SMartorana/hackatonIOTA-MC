@@ -123,6 +123,13 @@ public entry fun redeem<F, P>(
     // 5. Transfer the new token to the caller
     iota::transfer::public_transfer(token, ctx.sender());
 
+    // 5.5 Emit redeem event
+    events::emit_fraction_redeemed(
+        object::id(vault),
+        burn_amount,
+        ctx.sender(),
+    );
+
     // 6. Check if empty and emit event (but do NOT destroy automatically)
     if (coin::total_supply(&vault.treasury_cap) == 0) {
         events::emit_vault_empty(
@@ -158,6 +165,13 @@ public entry fun merge_back<F>(
     // 4. Add back to the existing token
     ltc1::add_fraction_balance(token, burn_amount, claimed);
 
+    // 4.5 Emit merge event
+    events::emit_fraction_merged_back(
+        object::id(vault),
+        object::id(token),
+        burn_amount,
+    );
+
     // 5. Check if empty and emit event
     if (coin::total_supply(&vault.treasury_cap) == 0) {
         events::emit_vault_empty(
@@ -183,6 +197,9 @@ public entry fun destroy_empty_vault<F>(
         total_claimed_snapshot: _,
         total_fractionalized: _,
     } = vault;
+
+    events::emit_vault_destroyed(object::uid_to_inner(&id));
+
     object::delete(id);
     iota::transfer::public_freeze_object(treasury_cap);
 }

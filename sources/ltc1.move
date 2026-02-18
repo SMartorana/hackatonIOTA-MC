@@ -350,6 +350,13 @@ public entry fun withdraw_funding<T>(
     // 2. Withdraw
     let funding = iota::coin::take(&mut package.funding_pool, amount, ctx); // Aborts if amount > funding_pool.value
     iota::transfer::public_transfer(funding, iota::tx_context::sender(ctx));
+
+    // 3. Emit Event
+    events::emit_funding_withdrawn(
+        iota::object::uid_to_inner(&package.id),
+        amount,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 /// Deposit revenue into the package (Owner Only)
@@ -417,6 +424,13 @@ public entry fun claim_revenue_owner<T>(
     // 6. Payout
     let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
     iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+
+    // 7. Emit Event
+    events::emit_revenue_claimed_owner(
+        iota::object::uid_to_inner(&package.id),
+        due,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 /// Transfer Owner Bond to a new owner
@@ -435,7 +449,12 @@ public entry fun transfer_bond(
     registry::consume_transfer_ticket(registry, bond.package_id, new_owner, LTC1Witness {});
 
     // 2. Transfer Bond
+    let bond_id = iota::object::id(&bond);
+    let pkg_id = bond.package_id;
     iota::transfer::transfer(bond, new_owner);
+
+    // 3. Emit Event
+    events::emit_bond_transferred(bond_id, pkg_id, new_owner);
 }
 
 /// Toggle sales state for the package
@@ -454,6 +473,12 @@ public entry fun toggle_sales<T>(
 
     // 2. Update Sales State
     package.sales_open = new_state;
+
+    // 3. Emit Event
+    events::emit_sales_toggled(
+        iota::object::uid_to_inner(&package.id),
+        new_state,
+    );
 }
 
 /// Claim Revenue for Investors
@@ -488,6 +513,14 @@ public entry fun claim_revenue<T>(
     // 5. Payout
     let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
     iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+
+    // 6. Emit Event
+    events::emit_revenue_claimed_investor(
+        iota::object::uid_to_inner(&package.id),
+        iota::object::uid_to_inner(&token.id),
+        due,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 // ==================== Accessors ====================
