@@ -1,6 +1,10 @@
 [package]
 name = "nplex"
-edition = "2024"
+edition = "2024.beta"
+
+[dependencies.IotaNotarization]
+local = "_deps/notarization/notarization-move"
 
 [addresses]
 nplex = "0x0"
+notarization = "0x5796922173dae7b4489f6a2ae7c3d2064e0e38610768389e18b3cbcf6d180ab7"

@@ -6,12 +6,15 @@
 module nplex::ltc1;
 
 use nplex::registry::{Self, NPLEXRegistry};
+use nplex::events;
+use nplex::display_utils;
+
 use iota::balance::{Self, Balance};
 use iota::coin::{Coin};
-use std::string::{Self, String};
-use iota::display;
+use std::string::String;
 use iota::package;
 use iota::clock::{Self, Clock};
+use iota_notarization::notarization::{Self, Notarization};
 
 // ==================== Errors ====================
 const E_INSUFFICIENT_SUPPLY: u64 = 1001;
@@ -32,6 +35,23 @@ const SPLIT_DENOMINATOR: u64 = 1_000_000;
 
 /// Min total supply (decrease the dust due to divisions rounding)
 const MIN_SUPPLY: u64 = 1_000_000_000;
+
+// ==================== Display Constants ====================
+
+const BOND_DISPLAY_NAME: vector<u8> = b"NPLEX Owner Bond";
+const BOND_DISPLAY_DESCRIPTION: vector<u8> = b"Administrative key for LTC1 Package {package_id}";
+const BOND_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/bond_gold.png";
+const BOND_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
+
+const TOKEN_DISPLAY_NAME: vector<u8> = b"NPLEX Investor Token";
+const TOKEN_DISPLAY_DESCRIPTION: vector<u8> = b"Investor share for LTC1 Package {package_id}";
+const TOKEN_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/token_blue.png";
+const TOKEN_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
+
+const DISPLAY_KEY_NAME: vector<u8> = b"name";
+const DISPLAY_KEY_DESCRIPTION: vector<u8> = b"description";
+const DISPLAY_KEY_IMAGE_URL: vector<u8> = b"image_url";
+const DISPLAY_KEY_PROJECT_URL: vector<u8> = b"project_url";
 
 // ==================== Structs ====================
 
@@ -69,6 +89,8 @@ public struct LTC1Package<phantom T> has key {
     id: iota::object::UID,
     name: String,
     document_hash: u256,
+    /// ID of the external Notarization Object (created via IOTA SDK)
+    notary_object_id: ID,
     
     // Supply & Pricing
     total_supply: u64,
@@ -97,62 +119,50 @@ public struct LTC1Package<phantom T> has key {
 
 // ==================== Initialization ====================
 
+#[allow(lint(share_owned))]
 fun init(otw: LTC1, ctx: &mut iota::tx_context::TxContext) {
     // 1. Claim Publisher
     let publisher = package::claim(otw, ctx);
 
     // 2. Setup Display
-    setup_display(&publisher, ctx);
+    // OwnerBond
+    display_utils::setup_display! <OwnerBond> (
+        &publisher,
+        vector[
+            std::string::utf8(DISPLAY_KEY_NAME),
+            std::string::utf8(DISPLAY_KEY_DESCRIPTION),
+            std::string::utf8(DISPLAY_KEY_IMAGE_URL),
+            std::string::utf8(DISPLAY_KEY_PROJECT_URL),
+        ],
+        vector[
+            std::string::utf8(BOND_DISPLAY_NAME),
+            std::string::utf8(BOND_DISPLAY_DESCRIPTION),
+            std::string::utf8(BOND_DISPLAY_IMAGE_URL),
+            std::string::utf8(BOND_DISPLAY_PROJECT_URL),
+        ],
+        ctx
+    );
+
+    // LTC1Token
+    display_utils::setup_display! <LTC1Token> (
+        &publisher,
+        vector[
+            std::string::utf8(DISPLAY_KEY_NAME),
+            std::string::utf8(DISPLAY_KEY_DESCRIPTION),
+            std::string::utf8(DISPLAY_KEY_IMAGE_URL),
+            std::string::utf8(DISPLAY_KEY_PROJECT_URL),
+        ],
+        vector[
+            std::string::utf8(TOKEN_DISPLAY_NAME),
+            std::string::utf8(TOKEN_DISPLAY_DESCRIPTION),
+            std::string::utf8(TOKEN_DISPLAY_IMAGE_URL),
+            std::string::utf8(TOKEN_DISPLAY_PROJECT_URL),
+        ],
+        ctx
+    );
 
     // 3. Cleanup & Transfer
     iota::transfer::public_transfer(publisher, iota::tx_context::sender(ctx));
-}
-
-#[allow(lint(share_owned))]
-fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::TxContext) {
-    // 1. Define Display for OwnerBond
-    let bond_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
-
-    let bond_values = vector[
-        string::utf8(b"NPLEX Owner Bond"),
-        string::utf8(b"Administrative key for LTC1 Package {package_id}"),
-        string::utf8(b"https://api.nplex.eu/icons/bond_gold.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut bond_display = display::new_with_fields<OwnerBond>(
-        publisher, bond_keys, bond_values, ctx
-    );
-    display::update_version(&mut bond_display);
-
-    // 2. Define Display for LTC1Token
-    let token_keys = vector[
-        string::utf8(b"name"),
-        string::utf8(b"description"),
-        string::utf8(b"image_url"),
-        string::utf8(b"project_url"),
-    ];
-
-    let token_values = vector[
-        string::utf8(b"NPLEX Investor Token"),
-        string::utf8(b"Investor share for LTC1 Package {package_id}"),
-        string::utf8(b"https://api.nplex.eu/icons/token_blue.png"),
-        string::utf8(b"https://nplex.eu"),
-    ];
-
-    let mut token_display = display::new_with_fields<LTC1Token>(
-        publisher, token_keys, token_values, ctx
-    );
-    display::update_version(&mut token_display);
-
-    // 3. Share Displays
-    iota::transfer::public_share_object(bond_display);
-    iota::transfer::public_share_object(token_display);
 }
 
 // ==================== Public Functions ====================
@@ -160,7 +170,7 @@ fun setup_display(publisher: &package::Publisher, ctx: &mut iota::tx_context::Tx
 public entry fun create_contract<T>(
     registry: &mut NPLEXRegistry,
     name: String,
-    document_hash: u256,
+    notarization: &Notarization<u256>,
     total_supply: u64,
     token_price: u64,
     nominal_value: u64,
@@ -171,14 +181,19 @@ public entry fun create_contract<T>(
 ) {
     let owner = iota::tx_context::sender(ctx); // Owner is the creator
 
+    // 0. Extract hash and ID from Notarization
+    let state = notarization::state(notarization);
+    let document_hash = *notarization::data(state);
+    let notary_object_id = iota::object::id(notarization);
+
     // 0. Validate Split
     assert!(investor_split_bps <= MAX_INVESTOR_BPS, E_INVALID_SPLIT);
 
     // 1. Validate Total Supply
     assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
 
-    // 2. Claim hash
-    let claim = registry::claim_hash(registry, document_hash, ctx);
+    // 2. Claim notarization
+    let claim = registry::claim_notarization(registry, notary_object_id, ctx);
 
     // 3. Create UIDs first to get IDs (Resolves circular dependency)
     let package_uid = iota::object::new(ctx);
@@ -195,15 +210,22 @@ public entry fun create_contract<T>(
         id: package_uid,
         name,
         document_hash,
+        notary_object_id,
+        
+        // Supply & Pricing
         total_supply,
         max_sellable_supply,
         tokens_sold: 0,
         token_price,
         nominal_value,
+        
+        // Pools
         funding_pool: balance::zero<T>(),
         revenue_pool: balance::zero<T>(),
         total_revenue_deposited: 0,
         owner_legacy_revenue: 0,
+        
+        // Metadata & Admin
         owner_bond_id: bond_id,
         creation_timestamp: clock::timestamp_ms(clock),
         metadata_uri,
@@ -231,6 +253,13 @@ public entry fun create_contract<T>(
     
     // Send the bond ONLY to the owner (they need this to act as admin)
     iota::transfer::transfer(bond, owner);
+
+    // 8. Emit Event
+    events::emit_contract_created(
+        package_id,
+        owner,
+        nominal_value,
+    );
 }
 
 /// Buy tokens from the package
@@ -244,7 +273,7 @@ public entry fun buy_token<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 0.1. amount must be greater than 0
     assert!(amount > 0, E_INVALID_AMOUNT);
@@ -293,6 +322,14 @@ public entry fun buy_token<T>(
     package.owner_legacy_revenue = package.owner_legacy_revenue + initial_claimed;
 
     iota::transfer::public_transfer(token, iota::tx_context::sender(ctx));
+
+    // 7. Emit Event
+    events::emit_token_purchased(
+        iota::object::uid_to_inner(&package.id),
+        iota::tx_context::sender(ctx),
+        amount,
+        cost,
+    );
 }
 
 /// Withdraw Funding from the package (Owner Only)
@@ -305,7 +342,7 @@ public entry fun withdraw_funding<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify OwnerBond matches this package
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -313,6 +350,13 @@ public entry fun withdraw_funding<T>(
     // 2. Withdraw
     let funding = iota::coin::take(&mut package.funding_pool, amount, ctx); // Aborts if amount > funding_pool.value
     iota::transfer::public_transfer(funding, iota::tx_context::sender(ctx));
+
+    // 3. Emit Event
+    events::emit_funding_withdrawn(
+        iota::object::uid_to_inner(&package.id),
+        amount,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 /// Deposit revenue into the package (Owner Only)
@@ -325,7 +369,7 @@ public entry fun deposit_revenue<T>(
     _ctx: &mut iota::tx_context::TxContext
 ) {
     // 0. Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify OwnerBond matches this package
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -336,6 +380,12 @@ public entry fun deposit_revenue<T>(
 
     // 3. Deposit to Revenue Pool
     balance::join(&mut package.revenue_pool, iota::coin::into_balance(payment));
+
+    // 4. Emit Event
+    events::emit_revenue_deposited(
+        iota::object::uid_to_inner(&package.id),
+        amount,
+    );
 }
 
 /// Claim Revenue for Owner
@@ -349,7 +399,7 @@ public entry fun claim_revenue_owner<T>(
     ctx: &mut iota::tx_context::TxContext
 ) {
     // Verify Contract Status (not revoked)
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify Bond
     assert!(bond.package_id == iota::object::uid_to_inner(&package.id), E_WRONG_BOND);
@@ -374,6 +424,13 @@ public entry fun claim_revenue_owner<T>(
     // 6. Payout
     let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
     iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+
+    // 7. Emit Event
+    events::emit_revenue_claimed_owner(
+        iota::object::uid_to_inner(&package.id),
+        due,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 /// Transfer Owner Bond to a new owner
@@ -392,7 +449,12 @@ public entry fun transfer_bond(
     registry::consume_transfer_ticket(registry, bond.package_id, new_owner, LTC1Witness {});
 
     // 2. Transfer Bond
+    let bond_id = iota::object::id(&bond);
+    let pkg_id = bond.package_id;
     iota::transfer::transfer(bond, new_owner);
+
+    // 3. Emit Event
+    events::emit_bond_transferred(bond_id, pkg_id, new_owner);
 }
 
 /// Toggle sales state for the package
@@ -411,6 +473,12 @@ public entry fun toggle_sales<T>(
 
     // 2. Update Sales State
     package.sales_open = new_state;
+
+    // 3. Emit Event
+    events::emit_sales_toggled(
+        iota::object::uid_to_inner(&package.id),
+        new_state,
+    );
 }
 
 /// Claim Revenue for Investors
@@ -424,7 +492,7 @@ public entry fun claim_revenue<T>(
 ) {
     // Verify Contract Status (not revoked)
     // TODO this has to be checked in the future when we have a more granular control over permissions
-    assert!(registry::is_valid_hash(registry, package.document_hash), E_CONTRACT_REVOKED);
+    assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
     // 1. Verify Token belongs to this package
     assert!(token.package_id == iota::object::uid_to_inner(&package.id), E_INVALID_TOKEN);
@@ -445,6 +513,14 @@ public entry fun claim_revenue<T>(
     // 5. Payout
     let payment = iota::coin::take(&mut package.revenue_pool, due, ctx);
     iota::transfer::public_transfer(payment, iota::tx_context::sender(ctx));
+
+    // 6. Emit Event
+    events::emit_revenue_claimed_investor(
+        iota::object::uid_to_inner(&package.id),
+        iota::object::uid_to_inner(&token.id),
+        due,
+        iota::tx_context::sender(ctx),
+    );
 }
 
 // ==================== Accessors ====================
@@ -508,4 +584,11 @@ public(package) fun add_fraction_balance(
 ) {
     token.balance = token.balance + balance;
     token.claimed_revenue = token.claimed_revenue + claimed_revenue;
+}
+
+// ==================== Testing Functions ====================
+
+#[test_only]
+public fun bond_package_id(bond: &OwnerBond): ID {
+    bond.package_id
 }
