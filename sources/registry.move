@@ -144,6 +144,8 @@ public struct NotarizedSaleToggle has store, copy, drop {
 public struct ApprovedIdentity has store, copy, drop {
     /// Bitmask role: 1 = Institution, 2 = Investor, 3 = Both
     role: u8,
+    /// The IOTA address authorized to act on behalf of this identity
+    owner: address,
 }
 
 // ==================== Initialization ====================
@@ -307,8 +309,20 @@ public entry fun authorize_transfer(
     _admin_cap: &NPLEXAdminCap,
     contract_id: ID,
     new_owner: address,
+    identity_id: ID, // The Identity that `new_owner` represents
     notarization_id: ID
 ) {
+    // 1. Verify Identity exists and matches
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    let identity = table::borrow(&registry.approved_identities, identity_id);
+    
+    // 2. Verify Address Ownership (The core security check)
+    // The Admin is authorizing `new_owner`, but WE ensure `new_owner` is the registered owner of the delegation token
+    assert!(identity.owner == new_owner, E_IDENTITY_NOT_APPROVED);
+
+    // 3. Verify Role (Must be Institution to hold a Bond)
+    assert!(identity.role & ROLE_INSTITUTION != 0, E_IDENTITY_WRONG_ROLE);
+
     if (table::contains(&registry.authorized_transfers, contract_id)) {
         table::remove(&mut registry.authorized_transfers, contract_id);
     };
@@ -348,15 +362,17 @@ public entry fun approve_identity(
     _admin_cap: &NPLEXAdminCap,
     identity_id: ID,
     role: u8,
+    owner: address,
 ) {
     assert!(role >= 1 && role <= 3, E_INVALID_ROLE);
 
     if (table::contains(&registry.approved_identities, identity_id)) {
-        // Update existing role
+        // Update existing role and owner
         let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
         info.role = role;
+        info.owner = owner;
     } else {
-        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
+        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role, owner });
     };
 
     events::emit_identity_approved(identity_id, role);

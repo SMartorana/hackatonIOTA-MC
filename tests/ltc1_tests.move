@@ -54,13 +54,13 @@ module nplex::ltc1_tests {
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
         // Whitelist OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
         // Whitelist INVESTOR as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, INVESTOR);
         // Whitelist INVESTOR2 as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2);
+        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2, INVESTOR2);
         // Whitelist NEW_OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, NEW_OWNER);
 
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
@@ -406,7 +406,7 @@ module nplex::ltc1_tests {
             // ONLY Authorize Witness (no notarization registered)
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist OWNER identity for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -476,7 +476,7 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
             // Whitelist OWNER identity for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
 
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -536,6 +536,7 @@ module nplex::ltc1_tests {
                 &admin_cap,
                 package_id,
                 NEW_OWNER,
+                new_owner_identity_id(),
                 authorization_notarization_id()
             );
 
@@ -556,7 +557,6 @@ module nplex::ltc1_tests {
                 bond,
                 NEW_OWNER,
                 &sender_did_token,
-                &new_owner_did_token,
                 ctx(&mut scenario)
             );
             controller::destroy_delegation_token_for_testing(sender_did_token);
@@ -705,7 +705,7 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_transfer(&mut registry, &admin_cap, package_id, NEW_OWNER, authorization_notarization_id());
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, NEW_OWNER, new_owner_identity_id(), authorization_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -717,7 +717,7 @@ module nplex::ltc1_tests {
             let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let sender_did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             let new_owner_did_token = controller::create_delegation_token_for_testing(new_owner_identity_id(), ctx(&mut scenario));
-            ltc1::transfer_bond(&mut registry, bond, NEW_OWNER, &sender_did_token, &new_owner_did_token, ctx(&mut scenario));
+            ltc1::transfer_bond(&mut registry, bond, NEW_OWNER, &sender_did_token, ctx(&mut scenario));
             controller::destroy_delegation_token_for_testing(sender_did_token);
             controller::destroy_delegation_token_for_testing(new_owner_did_token);
             test_scenario::return_shared(registry);
@@ -1051,8 +1051,8 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, NEW_OWNER);
             
             // 2. Update Authorized Creator to NEW_OWNER (A2)
             registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
@@ -1119,8 +1119,8 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, NEW_OWNER);
             
             // Update Authorized Creator to NEW_OWNER (A2)
             registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
@@ -1387,4 +1387,5 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+
 }

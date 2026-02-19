@@ -461,12 +461,10 @@ public entry fun transfer_bond(
     bond: OwnerBond,
     new_owner: address,
     sender_token: &DelegationToken,
-    new_owner_token: &DelegationToken,
     _ctx: &mut iota::tx_context::TxContext
 ) {
-    // Verify both sender and new owner have approved Institution DID
+    // Verify sender has approved Institution DID
     registry::verify_identity(registry, sender_token, registry::role_institution());
-    registry::verify_identity(registry, new_owner_token, registry::role_institution());
 
     // 1. Validate and Consume Ticket from Registry
     // This will abort if:
