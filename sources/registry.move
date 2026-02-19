@@ -14,6 +14,7 @@ use iota::table::{Self, Table};
 use iota::dynamic_field as df;
 use iota::package;
 use iota::clock::{Self, Clock};
+use iota_identity::controller::DelegationToken;
 
 // ==================== Error Codes ====================
 
@@ -43,6 +44,22 @@ const E_NOTARIZATION_NOT_REVOKED: u64 = 8;
 
 /// Notarization already revoked
 const E_NOTARIZATION_ALREADY_REVOKED: u64 = 9;
+
+/// Identity not approved in whitelist
+const E_IDENTITY_NOT_APPROVED: u64 = 10;
+
+/// Identity does not have required role
+const E_IDENTITY_WRONG_ROLE: u64 = 11;
+
+/// Invalid role value
+const E_INVALID_ROLE: u64 = 12;
+
+// ==================== Role Constants ====================
+
+/// Institution role (originators, servicers)
+const ROLE_INSTITUTION: u8 = 1;
+/// Investor role
+const ROLE_INVESTOR: u8 = 2;
 
 // ==================== Display Constants ====================
 
@@ -84,7 +101,9 @@ public struct NPLEXRegistry has key {
     /// Maps Bond ID -> Notarized transfer authorization
     authorized_transfers: Table<ID, NotarizedTransfer>,
     /// Maps LTC1Package ID -> Notarized sales toggle authorization
-    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>
+    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>,
+    /// Maps Identity object ID -> ApprovedIdentity (DID whitelist)
+    approved_identities: Table<ID, ApprovedIdentity>,
 }
 
 /// Information about an approved notarization
@@ -119,6 +138,12 @@ public struct NotarizedSaleToggle has store, copy, drop {
     notarization_id: ID,
     /// The target sales state (true = open, false = closed)
     target_state: bool,
+}
+
+/// Information about an approved DID identity
+public struct ApprovedIdentity has store, copy, drop {
+    /// Bitmask role: 1 = Institution, 2 = Investor, 3 = Both
+    role: u8,
 }
 
 // ==================== Initialization ====================
@@ -161,6 +186,7 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
         approved_notarizations: table::new(ctx),
         authorized_transfers: table::new(ctx),
         authorized_sales_toggles: table::new(ctx),
+        approved_identities: table::new(ctx),
     };
     transfer::share_object(registry);
 
@@ -315,6 +341,39 @@ public entry fun authorize_sales_toggle(
     events::emit_sales_toggle_authorized(contract_id, new_state, notarization_id);
 }
 
+/// Whitelist a DID Identity for a specific role (Admin Only)
+/// role: 1 = Institution, 2 = Investor, 3 = Both
+public entry fun approve_identity(
+    registry: &mut NPLEXRegistry,
+    _admin_cap: &NPLEXAdminCap,
+    identity_id: ID,
+    role: u8,
+) {
+    assert!(role >= 1 && role <= 3, E_INVALID_ROLE);
+
+    if (table::contains(&registry.approved_identities, identity_id)) {
+        // Update existing role
+        let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
+        info.role = role;
+    } else {
+        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
+    };
+
+    events::emit_identity_approved(identity_id, role);
+}
+
+/// Remove a DID Identity from the whitelist (Admin Only)
+public entry fun revoke_identity(
+    registry: &mut NPLEXRegistry,
+    _admin_cap: &NPLEXAdminCap,
+    identity_id: ID,
+) {
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    table::remove(&mut registry.approved_identities, identity_id);
+
+    events::emit_identity_revoked(identity_id);
+}
+
 // ==================== Validation Functions ====================
 
 /// Claim a notarization to start usage flow
@@ -406,6 +465,25 @@ public fun consume_sales_toggle_ticket<T: drop>(
 
     target_state
 }
+
+/// Verify that a DelegationToken's Identity is whitelisted with the required role
+/// required_role: ROLE_INSTITUTION (1) or ROLE_INVESTOR (2)
+public(package) fun verify_identity(
+    registry: &NPLEXRegistry,
+    token: &DelegationToken,
+    required_role: u8,
+) {
+    let identity_id = iota_identity::controller::delegation_token_controller_of(token);
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    let info = table::borrow(&registry.approved_identities, identity_id);
+    // Bitmask check: role must contain required_role bits
+    assert!(info.role & required_role != 0, E_IDENTITY_WRONG_ROLE);
+}
+
+// ==================== Role Accessors ====================
+
+public fun role_institution(): u8 { ROLE_INSTITUTION }
+public fun role_investor(): u8 { ROLE_INVESTOR }
 
 // ==================== Idempotent Functions ====================
 

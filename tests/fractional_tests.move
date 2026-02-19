@@ -43,6 +43,7 @@ module nplex::fractional_tests {
     use iota_notarization::notarization;
     use iota_notarization::dynamic_notarization;
     use iota_notarization::timelock;
+    use iota_identity::controller;
 
     // Test Users
     const ADMIN: address = @0xAD;
@@ -61,6 +62,10 @@ module nplex::fractional_tests {
     /// Stable mock ID for backing transfer/toggle authorizations in tests
     fun authorization_notarization_id(): ID { object::id_from_address(@0xAA1) }
 
+    /// Identity IDs for test users
+    fun owner_identity_id(): ID { object::id_from_address(@0xB1D) }
+    fun investor_identity_id(): ID { object::id_from_address(@0xC1D) }
+
     // ==================== Helpers ====================
 
     fun setup_registry(scenario: &mut Scenario) {
@@ -72,6 +77,9 @@ module nplex::fractional_tests {
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+        // Whitelist identities for DID verification
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2);
 
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
@@ -106,6 +114,7 @@ module nplex::fractional_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
             let clock = clock::create_for_testing(ctx(scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"Test Package"),
@@ -115,9 +124,11 @@ module nplex::fractional_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://test"),
+                &did_token,
                 &clock,
                 ctx(scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -145,7 +156,9 @@ module nplex::fractional_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -156,7 +169,9 @@ module nplex::fractional_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(scenario, package_id);
             let payment = coin::mint_for_testing<IOTA>(buy_amount * TOKEN_PRICE, ctx(scenario));
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -286,7 +301,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000, ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -298,7 +315,9 @@ module nplex::fractional_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             // claimed_revenue should now be > 0
             assert!(ltc1::claimed_revenue(&token) > 0);
             test_scenario::return_to_sender(&scenario, token);
@@ -334,7 +353,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(2_000_000, ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -366,7 +387,9 @@ module nplex::fractional_tests {
 
             // Claim from original (50k balance)
             let mut token1 = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_to_sender(&scenario, token1);
 
             test_scenario::return_shared(registry);
@@ -538,6 +561,7 @@ module nplex::fractional_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"Other Package"),
@@ -547,9 +571,11 @@ module nplex::fractional_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://other"),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -606,7 +632,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000_000, ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -626,7 +654,9 @@ module nplex::fractional_tests {
             assert!(ltc1::balance(&token) == 100_000);
             assert!(ltc1::claimed_revenue(&token) == 0);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             // After claim: claimed_revenue = 100,000
             assert!(ltc1::claimed_revenue(&token) == 100_000);
@@ -703,7 +733,9 @@ module nplex::fractional_tests {
             let mut token1 = test_scenario::take_from_sender<LTC1Token>(&scenario);
             assert!(ltc1::balance(&token1) == 50_000);
             assert!(ltc1::claimed_revenue(&token1) == 50_000);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             // claimed_revenue unchanged (nothing new to claim)
             assert!(ltc1::claimed_revenue(&token1) == 50_000);
             test_scenario::return_to_sender(&scenario, token1);
@@ -721,7 +753,9 @@ module nplex::fractional_tests {
             let mut token2 = test_scenario::take_from_sender<LTC1Token>(&scenario);
             assert!(ltc1::balance(&token2) == 50_000);
             assert!(ltc1::claimed_revenue(&token2) == 50_000);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token2, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token2, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             // Also unchanged — NO double claim
             assert!(ltc1::claimed_revenue(&token2) == 50_000);
             test_scenario::return_to_sender(&scenario, token2);
@@ -740,7 +774,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000_000, ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -757,7 +793,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
 
             let mut token1 = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token1, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             assert!(ltc1::claimed_revenue(&token1) == 100_000); // 50k old + 50k new
             test_scenario::return_to_sender(&scenario, token1);
 
@@ -771,7 +809,9 @@ module nplex::fractional_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
 
             let mut token2 = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token2, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token2, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             assert!(ltc1::claimed_revenue(&token2) == 100_000); // 50k old + 50k new
             test_scenario::return_to_sender(&scenario, token2);
 

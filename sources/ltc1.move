@@ -15,6 +15,7 @@ use std::string::String;
 use iota::package;
 use iota::clock::{Self, Clock};
 use iota_notarization::notarization::{Self, Notarization};
+use iota_identity::controller::DelegationToken;
 
 // ==================== Errors ====================
 const E_INSUFFICIENT_SUPPLY: u64 = 1001;
@@ -176,9 +177,13 @@ public entry fun create_contract<T>(
     nominal_value: u64,
     investor_split_bps: u64,
     metadata_uri: String,
+    token: &DelegationToken,
     clock: &Clock,
     ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Institution DID
+    registry::verify_identity(registry, token, registry::role_institution());
+
     let owner = iota::tx_context::sender(ctx); // Owner is the creator
 
     // 0. Extract hash and ID from Notarization
@@ -270,8 +275,12 @@ public entry fun buy_token<T>(
     package: &mut LTC1Package<T>,
     mut payment: Coin<T>,
     amount: u64,
+    token: &DelegationToken,
     ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Investor DID
+    registry::verify_identity(registry, token, registry::role_investor());
+
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
@@ -339,8 +348,12 @@ public entry fun withdraw_funding<T>(
     package: &mut LTC1Package<T>,
     bond: &OwnerBond,
     amount: u64,
+    token: &DelegationToken,
     ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Institution DID
+    registry::verify_identity(registry, token, registry::role_institution());
+
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
@@ -366,8 +379,12 @@ public entry fun deposit_revenue<T>(
     package: &mut LTC1Package<T>,
     bond: &OwnerBond,
     payment: Coin<T>,
+    token: &DelegationToken,
     _ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Institution DID
+    registry::verify_identity(registry, token, registry::role_institution());
+
     // 0. Verify Contract Status (not revoked)
     assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
@@ -396,8 +413,12 @@ public entry fun claim_revenue_owner<T>(
     registry: &NPLEXRegistry,
     package: &mut LTC1Package<T>,
     bond: &mut OwnerBond,
+    token: &DelegationToken,
     ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Institution DID
+    registry::verify_identity(registry, token, registry::role_institution());
+
     // Verify Contract Status (not revoked)
     assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);
 
@@ -439,8 +460,14 @@ public entry fun transfer_bond(
     registry: &mut NPLEXRegistry,
     bond: OwnerBond,
     new_owner: address,
+    sender_token: &DelegationToken,
+    new_owner_token: &DelegationToken,
     _ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify both sender and new owner have approved Institution DID
+    registry::verify_identity(registry, sender_token, registry::role_institution());
+    registry::verify_identity(registry, new_owner_token, registry::role_institution());
+
     // 1. Validate and Consume Ticket from Registry
     // This will abort if:
     // - LTC1 is not an allowed executor (Unlikely if code is published)
@@ -462,8 +489,12 @@ public entry fun transfer_bond(
 public entry fun toggle_sales<T>(
     registry: &mut NPLEXRegistry,
     package: &mut LTC1Package<T>,
+    token: &DelegationToken,
     _ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Institution DID
+    registry::verify_identity(registry, token, registry::role_institution());
+
     // 1. Consume Ticket from Registry (validates executor + authorization)
     let new_state = registry::consume_sales_toggle_ticket(
         registry,
@@ -488,8 +519,12 @@ public entry fun claim_revenue<T>(
     registry: &NPLEXRegistry,
     package: &mut LTC1Package<T>,
     token: &mut LTC1Token,
+    did_token: &DelegationToken,
     ctx: &mut iota::tx_context::TxContext
 ) {
+    // Verify caller has approved Investor DID
+    registry::verify_identity(registry, did_token, registry::role_investor());
+
     // Verify Contract Status (not revoked)
     // TODO this has to be checked in the future when we have a more granular control over permissions
     assert!(registry::is_valid_notarization(registry, package.notary_object_id), E_CONTRACT_REVOKED);

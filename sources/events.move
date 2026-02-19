@@ -76,6 +76,23 @@ module nplex::events {
         nominal_value: u64
     }
 
+    /// Emitted when the owner DID is set or updated on an LTC1 Package
+    public struct OwnerDidUpdated has copy, drop {
+        package_id: iota::object::ID,
+        owner_did: option::Option<address>,
+    }
+
+    /// Emitted when an Identity is approved/whitelisted
+    public struct IdentityApproved has copy, drop {
+        identity_id: iota::object::ID,
+        role: u8,
+    }
+
+    /// Emitted when an Identity is revoked from the whitelist
+    public struct IdentityRevoked has copy, drop {
+        identity_id: iota::object::ID,
+    }
+
     /// Emitted when an investor buys LTC1 tokens
     public struct TokenPurchased has copy, drop {
         package_id: iota::object::ID,
@@ -336,6 +353,34 @@ module nplex::events {
             bond_id,
             package_id,
             new_owner,
+        });
+    }
+
+    public(package) fun emit_owner_did_updated(
+        package_id: iota::object::ID,
+        owner_did: option::Option<address>,
+    ) {
+        iota::event::emit(OwnerDidUpdated {
+            package_id,
+            owner_did,
+        });
+    }
+
+    public(package) fun emit_identity_approved(
+        identity_id: iota::object::ID,
+        role: u8,
+    ) {
+        iota::event::emit(IdentityApproved {
+            identity_id,
+            role,
+        });
+    }
+
+    public(package) fun emit_identity_revoked(
+        identity_id: iota::object::ID,
+    ) {
+        iota::event::emit(IdentityRevoked {
+            identity_id,
         });
     }
 
