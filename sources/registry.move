@@ -132,6 +132,8 @@ public struct NotarizedTransfer has store, copy, drop {
     notarization_id: ID,
     /// The authorized recipient of the bond
     new_owner: address,
+    /// The DID Identity of the new owner explicitly approved by NPLEX Admin
+    new_owner_identity: ID,
 }
 
 /// Notarized sales toggle authorization — ties a sales state change to a specific notarization
@@ -327,6 +329,7 @@ public entry fun authorize_transfer(
     table::add(&mut registry.authorized_transfers, contract_id, NotarizedTransfer {
         notarization_id,
         new_owner,
+        new_owner_identity: identity_id,
     });
 
     events::emit_transfer_authorized(contract_id, new_owner, notarization_id);
@@ -438,6 +441,7 @@ public fun consume_transfer_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
     bond_id: ID,
     new_owner: address,
+    new_owner_identity: ID,
     _witness: T
 ) {
     // 1. Verify Witness (Caller) is an allowed executor
@@ -446,9 +450,10 @@ public fun consume_transfer_ticket<T: drop>(
     // 2. Verify Transfer is Authorized
     assert!(table::contains(&registry.authorized_transfers, bond_id), E_TRANSFER_NOT_AUTHORIZED);
     
-    // 3. Verify Recipient matches
+    // 3. Verify Recipient and Identity matches
     let authorization = *table::borrow(&registry.authorized_transfers, bond_id);
     assert!(authorization.new_owner == new_owner, E_TRANSFER_NOT_AUTHORIZED);
+    assert!(authorization.new_owner_identity == new_owner_identity, E_TRANSFER_NOT_AUTHORIZED);
 
     // 4. Consume Ticket
     table::remove(&mut registry.authorized_transfers, bond_id);
