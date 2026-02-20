@@ -444,7 +444,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             // Should succeed with correct witness and parameters
-            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, TestWitness {});
+            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, alice_identity_id(), TestWitness {});
             
             // Assert: Ticket Consumed
             assert!(!registry::is_transfer_authorized(&registry, package_id), 2);
@@ -480,7 +480,7 @@ module nplex::registry_tests {
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            registry::consume_transfer_ticket(&mut registry, package_id, wrong_owner, TestWitness {});
+            registry::consume_transfer_ticket(&mut registry, package_id, wrong_owner, alice_identity_id(), TestWitness {});
             test_scenario::return_shared(registry);
         };
         
@@ -511,7 +511,7 @@ module nplex::registry_tests {
         test_scenario::next_tx(&mut scenario, ADMIN);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, UnauthorizedWitness {});
+            registry::consume_transfer_ticket(&mut registry, package_id, new_owner, alice_identity_id(), UnauthorizedWitness {});
             test_scenario::return_shared(registry);
         };
         

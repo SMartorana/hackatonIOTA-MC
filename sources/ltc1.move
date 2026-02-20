@@ -434,7 +434,7 @@ public entry fun transfer_ownership<T>(
 
     // 1. Validate and Consume Ticket from Registry
     let pkg_id = iota::object::uid_to_inner(&package.id);
-    registry::consume_transfer_ticket(registry, pkg_id, new_owner, LTC1Witness {});
+    registry::consume_transfer_ticket(registry, pkg_id, new_owner, new_owner_identity, LTC1Witness {});
 
     // 2. Update ownership on package
     package.owner_identity = new_owner_identity;
