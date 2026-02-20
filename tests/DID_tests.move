@@ -32,8 +32,7 @@ module nplex::did_tests {
                 &mut registry,
                 &admin_cap,
                 did_id(INSTITUTION_DID),
-                registry::role_institution(),
-                INSTITUTION_DID // Owner address
+                registry::role_institution()
             );
 
             test_scenario::return_shared(registry);
@@ -105,7 +104,7 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), INSTITUTION_DID);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
             registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID));
 
             test_scenario::return_shared(registry);
@@ -157,8 +156,8 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), INSTITUTION_DID);
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor(), INVESTOR_DID);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor());
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -197,7 +196,7 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             // Register as Institution only
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), INSTITUTION_DID);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };

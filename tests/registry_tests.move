@@ -427,7 +427,7 @@ module nplex::registry_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
 
             // Approve Identity for ALICE
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, ALICE);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
             
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
             
@@ -470,7 +470,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, ALICE);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -501,7 +501,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, ALICE);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);

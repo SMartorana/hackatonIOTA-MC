@@ -31,7 +31,7 @@ module nplex::test_frac_coin {
 
 #[test_only, allow(unused_const)]
 module nplex::fractional_tests {
-    use nplex::ltc1::{Self, LTC1Package, LTC1Token, LTC1Witness, OwnerBond};
+    use nplex::ltc1::{Self, LTC1Package, LTC1Token, LTC1Witness};
     use nplex::fractional::{Self, FractionalVault};
     use nplex::registry::{Self, NPLEXRegistry, NPLEXAdminCap};
     use nplex::test_frac_coin::TEST_FRAC_COIN;
@@ -78,8 +78,8 @@ module nplex::fractional_tests {
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
         // Whitelist identities for DID verification
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, OWNER);
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, INVESTOR);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2);
 
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
@@ -124,6 +124,7 @@ module nplex::fractional_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://test"),
+                owner_identity_id(),
                 &did_token,
                 &clock,
                 ctx(scenario)
@@ -134,12 +135,12 @@ module nplex::fractional_tests {
             test_scenario::return_shared(registry);
         };
 
-        // Step 3: Get package_id from OwnerBond
+        // Step 3: Get package_id from shared LTC1Package
         next_tx(scenario, OWNER);
         let package_id = {
-            let bond = test_scenario::take_from_sender<OwnerBond>(scenario);
-            let id = ltc1::bond_package_id(&bond);
-            test_scenario::return_to_sender(scenario, bond);
+            let package = test_scenario::take_shared<LTC1Package<IOTA>>(scenario);
+            let id = object::id(&package);
+            test_scenario::return_shared(package);
             id
         };
 
@@ -299,12 +300,10 @@ module nplex::fractional_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000, ctx(&mut scenario));
             let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, revenue, &did_token, ctx(&mut scenario));
             controller::destroy_delegation_token_for_testing(did_token);
-            test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -351,12 +350,10 @@ module nplex::fractional_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(2_000_000, ctx(&mut scenario));
             let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, revenue, &did_token, ctx(&mut scenario));
             controller::destroy_delegation_token_for_testing(did_token);
-            test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -571,6 +568,7 @@ module nplex::fractional_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://other"),
+                owner_identity_id(),
                 &did_token,
                 &clock,
                 ctx(&mut scenario)
@@ -581,14 +579,13 @@ module nplex::fractional_tests {
             test_scenario::return_shared(registry);
         };
 
-        // Get the OTHER package ID from OwnerBond
+        // Get the OTHER package ID from shared LTC1Package
         next_tx(&mut scenario, OWNER);
         let other_package_id = {
-            // OWNER now has 2 bonds; we need the most recent one (the "other" contract)
-            // Since take_from_sender returns the most recently created, this should be the second bond
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
-            let id = ltc1::bond_package_id(&bond);
-            test_scenario::return_to_sender(&scenario, bond);
+            // OWNER now has access to 2 packages; take the second one
+            let package = test_scenario::take_shared<LTC1Package<IOTA>>(&scenario);
+            let id = object::id(&package);
+            test_scenario::return_shared(package);
             id
         };
 
@@ -630,12 +627,10 @@ module nplex::fractional_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000_000, ctx(&mut scenario));
             let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, revenue, &did_token, ctx(&mut scenario));
             controller::destroy_delegation_token_for_testing(did_token);
-            test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -772,12 +767,10 @@ module nplex::fractional_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<nplex::ltc1::OwnerBond>(&scenario);
             let revenue = coin::mint_for_testing<IOTA>(1_000_000_000, ctx(&mut scenario));
             let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, revenue, &did_token, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, revenue, &did_token, ctx(&mut scenario));
             controller::destroy_delegation_token_for_testing(did_token);
-            test_scenario::return_to_sender(&scenario, bond);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };

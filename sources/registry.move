@@ -60,6 +60,8 @@ const E_INVALID_ROLE: u64 = 12;
 const ROLE_INSTITUTION: u8 = 1;
 /// Investor role
 const ROLE_INVESTOR: u8 = 2;
+/// Admin role (NPLEX platform admin)
+const ROLE_ADMIN: u8 = 4;
 
 // ==================== Display Constants ====================
 
@@ -141,11 +143,11 @@ public struct NotarizedSaleToggle has store, copy, drop {
 }
 
 /// Information about an approved DID identity
+/// The link between a user's address and their DID Identity is proven
+/// at runtime via DelegationToken, never stored statically.
 public struct ApprovedIdentity has store, copy, drop {
-    /// Bitmask role: 1 = Institution, 2 = Investor, 3 = Both
+    /// Bitmask role: 1 = Institution, 2 = Investor, 4 = Admin (combinable)
     role: u8,
-    /// The IOTA address authorized to act on behalf of this identity
-    owner: address,
 }
 
 // ==================== Initialization ====================
@@ -302,7 +304,7 @@ public entry fun remove_executor<T>(
     };
 }
 
-/// Authorize a Bond Transfer for a specific contract
+/// Authorize an Ownership Transfer for a specific contract
 /// Invariant: only callable by NPLEX admin
 public entry fun authorize_transfer(
     registry: &mut NPLEXRegistry,
@@ -312,15 +314,11 @@ public entry fun authorize_transfer(
     identity_id: ID, // The Identity that `new_owner` represents
     notarization_id: ID
 ) {
-    // 1. Verify Identity exists and matches
+    // 1. Verify Identity exists
     assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
     let identity = table::borrow(&registry.approved_identities, identity_id);
-    
-    // 2. Verify Address Ownership (The core security check)
-    // The Admin is authorizing `new_owner`, but WE ensure `new_owner` is the registered owner of the delegation token
-    assert!(identity.owner == new_owner, E_IDENTITY_NOT_APPROVED);
 
-    // 3. Verify Role (Must be Institution to hold a Bond)
+    // 2. Verify Role (Must be Institution to own a package)
     assert!(identity.role & ROLE_INSTITUTION != 0, E_IDENTITY_WRONG_ROLE);
 
     if (table::contains(&registry.authorized_transfers, contract_id)) {
@@ -356,23 +354,21 @@ public entry fun authorize_sales_toggle(
 }
 
 /// Whitelist a DID Identity for a specific role (Admin Only)
-/// role: 1 = Institution, 2 = Investor, 3 = Both
+/// role: 1 = Institution, 2 = Investor, 4 = Admin (bitmask, combinable up to 7)
 public entry fun approve_identity(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     identity_id: ID,
     role: u8,
-    owner: address,
 ) {
-    assert!(role >= 1 && role <= 3, E_INVALID_ROLE);
+    assert!(role >= 1 && role <= 7, E_INVALID_ROLE);
 
     if (table::contains(&registry.approved_identities, identity_id)) {
-        // Update existing role and owner
+        // Update existing role
         let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
         info.role = role;
-        info.owner = owner;
     } else {
-        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role, owner });
+        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
     };
 
     events::emit_identity_approved(identity_id, role);
@@ -483,7 +479,7 @@ public fun consume_sales_toggle_ticket<T: drop>(
 }
 
 /// Verify that a DelegationToken's Identity is whitelisted with the required role
-/// required_role: ROLE_INSTITUTION (1) or ROLE_INVESTOR (2)
+/// required_role: ROLE_INSTITUTION (1), ROLE_INVESTOR (2), or ROLE_ADMIN (4)
 public(package) fun verify_identity(
     registry: &NPLEXRegistry,
     token: &DelegationToken,
@@ -496,10 +492,12 @@ public(package) fun verify_identity(
     assert!(info.role & required_role != 0, E_IDENTITY_WRONG_ROLE);
 }
 
+
 // ==================== Role Accessors ====================
 
 public fun role_institution(): u8 { ROLE_INSTITUTION }
 public fun role_investor(): u8 { ROLE_INVESTOR }
+public fun role_admin(): u8 { ROLE_ADMIN }
 
 // ==================== Idempotent Functions ====================
 
