@@ -3,5 +3,4 @@ Move.lock
 _deps/
 deployed_addresses.json
 MIDDLEWARE_GUIDE.md
-MIGRATION_REPORT.md
 .agent/

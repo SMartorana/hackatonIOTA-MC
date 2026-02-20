@@ -129,11 +129,10 @@ module nplex::events {
         investor: address,
     }
 
-    /// Emitted when an owner bond is transferred
-    public struct BondTransferred has copy, drop {
-        bond_id: iota::object::ID,
+    /// Emitted when package ownership is transferred to a new DID
+    public struct OwnershipTransferred has copy, drop {
         package_id: iota::object::ID,
-        new_owner: address,
+        new_owner_identity: iota::object::ID,
     }
 
     /// Emitted when sales state is toggled
@@ -344,15 +343,13 @@ module nplex::events {
         });
     }
 
-    public(package) fun emit_bond_transferred(
-        bond_id: iota::object::ID,
+    public(package) fun emit_ownership_transferred(
         package_id: iota::object::ID,
-        new_owner: address,
+        new_owner_identity: iota::object::ID,
     ) {
-        iota::event::emit(BondTransferred {
-            bond_id,
+        iota::event::emit(OwnershipTransferred {
             package_id,
-            new_owner,
+            new_owner_identity,
         });
     }
 
