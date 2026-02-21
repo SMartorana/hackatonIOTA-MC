@@ -91,8 +91,8 @@ module nplex::fractional_tests {
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
         // Whitelist identities for DID verification
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_notarization);
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, b"mock_vc_jwt_data", &backing_notarization);
 
         test_scenario::return_to_sender(scenario, backing_notarization);
         test_scenario::return_shared(registry);

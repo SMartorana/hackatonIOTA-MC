@@ -67,13 +67,13 @@ module nplex::ltc1_tests {
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
         // Whitelist OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
         // Whitelist INVESTOR as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, b"mock_vc_jwt_data", &backing_notarization);
         // Whitelist INVESTOR2 as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2, b"mock_vc_jwt_data", &backing_notarization);
         // Whitelist NEW_OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
 
         test_scenario::return_to_sender(scenario, backing_notarization);
         test_scenario::return_shared(registry);
@@ -422,7 +422,7 @@ module nplex::ltc1_tests {
             let backing_obj = dynamic_notarization::new<u256>(
                 state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
             );
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_obj);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &backing_obj);
             dynamic_notarization::transfer(backing_obj, ADMIN, &clock, ctx(&mut scenario));
             clock::destroy_for_testing(clock);
 
@@ -494,7 +494,7 @@ module nplex::ltc1_tests {
             let real_id = object::id(&notarization_obj);
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             // Whitelist OWNER identity for DID verification — use existing notarization_obj as backing ref
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &notarization_obj);
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
 
             clock::destroy_for_testing(clock);
@@ -1064,8 +1064,8 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification — use the notarization_obj as backing ref
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, b"mock_vc_jwt_data", &notarization_obj);
             
             // 2. Update Authorized Creator to NEW_OWNER (A2)
             registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, &notarization_obj);
@@ -1133,8 +1133,8 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification — use the notarization_obj as backing ref
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, b"mock_vc_jwt_data", &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, b"mock_vc_jwt_data", &notarization_obj);
             
             // Update Authorized Creator to NEW_OWNER (A2)
             registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, &notarization_obj);
