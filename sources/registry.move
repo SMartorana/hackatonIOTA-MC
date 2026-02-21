@@ -490,7 +490,7 @@ public fun consume_sales_toggle_ticket<T: drop>(
 
 /// Verify that a DelegationToken's Identity is whitelisted with the required role
 /// required_role: ROLE_INSTITUTION (1), ROLE_INVESTOR (2), or ROLE_ADMIN (4)
-public(package) fun verify_identity(
+public fun verify_identity(
     registry: &NPLEXRegistry,
     token: &DelegationToken,
     required_role: u8,
