@@ -55,7 +55,7 @@ module nplex::did_tests {
                 &mut registry,
                 &admin_cap,
                 did_id(INSTITUTION_DID),
-                registry::role_institution(),
+                registry::role_institution(), b"mock_vc_jwt_data",
                 &backing_notarization,
             );
 
@@ -136,7 +136,7 @@ module nplex::did_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), b"mock_vc_jwt_data", &backing_notarization);
             registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), &backing_notarization);
 
             test_scenario::return_to_sender(&scenario, backing_notarization);
@@ -194,8 +194,8 @@ module nplex::did_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), &backing_notarization);
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor(), &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), b"mock_vc_jwt_data", &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor(), b"mock_vc_jwt_data", &backing_notarization);
 
             test_scenario::return_to_sender(&scenario, backing_notarization);
             test_scenario::return_shared(registry);
@@ -240,7 +240,7 @@ module nplex::did_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
             // Register as Institution only
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), b"mock_vc_jwt_data", &backing_notarization);
             test_scenario::return_to_sender(&scenario, backing_notarization);
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -309,13 +309,13 @@ module nplex::did_tests {
             registry::approve_identity(
                 &mut registry, &admin_cap,
                 institution_identity_id,
-                registry::role_institution(),
+                registry::role_institution(), b"mock_vc_jwt_data",
                 &backing_notarization,
             );
             registry::approve_identity(
                 &mut registry, &admin_cap,
                 investor_identity_id,
-                registry::role_investor(),
+                registry::role_investor(), b"mock_vc_jwt_data",
                 &backing_notarization,
             );
 
@@ -394,7 +394,7 @@ module nplex::did_tests {
             registry::approve_identity(
                 &mut registry, &admin_cap,
                 institution_identity_id,
-                registry::role_institution(),
+                registry::role_institution(), b"mock_vc_jwt_data",
                 &backing_notarization,
             );
             test_scenario::return_to_sender(&scenario, backing_notarization);
@@ -454,7 +454,7 @@ module nplex::did_tests {
             registry::approve_identity(
                 &mut registry, &admin_cap,
                 institution_identity_id,
-                registry::role_institution(),
+                registry::role_institution(), b"mock_vc_jwt_data",
                 &backing_notarization,
             );
             registry::revoke_identity(

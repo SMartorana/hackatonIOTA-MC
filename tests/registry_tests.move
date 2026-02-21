@@ -456,7 +456,7 @@ module nplex::registry_tests {
 
             // Approve Identity for ALICE
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
             test_scenario::return_to_sender(&scenario, backing_notarization);
             
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
@@ -501,7 +501,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
             test_scenario::return_to_sender(&scenario, backing_notarization);
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);
@@ -534,7 +534,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             let backing_notarization = test_scenario::take_from_sender<Notarization<u256>>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, &backing_notarization);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, b"mock_vc_jwt_data", &backing_notarization);
             test_scenario::return_to_sender(&scenario, backing_notarization);
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);

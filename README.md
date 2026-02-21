@@ -59,6 +59,15 @@ Each LTC1 contract operates using these assets:
 - **Verification:** All owner-gated functions verify the caller's `DelegationToken` matches the registered `owner_identity`.
 - **Transfer:** Ownership can be transferred to a new DID with NPLEX approval via `transfer_ownership`.
 
+#### Verifiable Credentials (VC) Integration
+
+NPLEX uses a **hybrid architecture** that bridges off-chain W3C Verifiable Credentials with on-chain smart contract authorization:
+
+- **Off-chain (Backend):** The NPLEX backend acts as an Issuer using the IOTA Identity SDK. After a user completes KYC/AML verification, the backend issues a signed W3C Verifiable Credential (JWT format) to the user's wallet.
+- **On-chain (Smart Contract):** When the admin calls `approve_identity`, the raw bytes of the W3C VC (`vc_data: vector<u8>`) are **mandatory**. They are stored permanently inside the `ApprovedIdentity` record in the registry as an immutable on-chain audit trail.
+- **Why not in events?** The `iota_identity::public_vc::PublicVc` struct (which wraps `vector<u8>`) has only the `store` ability — no `copy` or `drop`. This means VC data cannot be emitted in Move events. It is stored once in the registry table and can be queried directly.
+- **User flow:** Once approved, the user interacts with the protocol using only their `DelegationToken` — no VC data is needed at transaction time. The on-chain VC serves as a compliance receipt for auditors.
+
 ### Layer 3: Fractionalization (Optional)
 
 LTC1Tokens can be fractionalized into fungible DEX-tradeable coins:
@@ -72,42 +81,42 @@ LTC1Tokens can be fractionalized into fungible DEX-tradeable coins:
 
 ### NPLEX Registry Module
 
-| Function                      | Description                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------ |
-| `register_notarization`       | Register an approved notarization by ID (Admin Only, for `create_contract` use)            |
-| `revoke_notarization`         | Revoke a notarization if fraud detected (Admin Only)                                       |
-| `unrevoke_notarization`       | Un-revoke a previously revoked notarization (Admin Only)                                   |
-| `update_authorized_creator`   | Update who can create a contract with a notarization (Admin Only)                          |
-| `add_executor`                | Authorize a module (LTC1) to bind to notarizations (Admin Only)                            |
-| `remove_executor`             | De-authorize a module (Admin Only)                                                         |
-| `authorize_transfer`          | Authorize ownership transfer to a new DID, backed by a notarization reference (Admin Only) |
-| `authorize_sales_toggle`      | Authorize a sales state change, backed by a notarization reference (Admin Only)            |
-| `approve_identity`            | Whitelist a DID with a role (Institution/Investor/Admin) (Admin Only)                      |
-| `revoke_identity`             | Remove a DID from the whitelist (Admin Only)                                               |
-| `verify_identity`             | Verify a DelegationToken belongs to a whitelisted DID with a required role                 |
-| `claim_notarization`          | Start the contract creation process by claiming a notarization                             |
-| `bind_executor`               | Bind a claimed notarization to a new contract ID                                           |
-| `consume_transfer_ticket`     | Consume authorization to execute an ownership transfer                                     |
-| `consume_sales_toggle_ticket` | Consume authorization to execute a sales toggle                                            |
-| `is_valid_notarization`       | Check if notarization is approved and not revoked                                          |
-| `get_notarization_info`       | Get full status of a registered notarization                                               |
+| Function                      | Description                                                                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `register_notarization`       | Register an approved notarization by ID (Admin Only, for `create_contract` use)                                                                                  |
+| `revoke_notarization`         | Revoke a notarization if fraud detected (Admin Only)                                                                                                             |
+| `unrevoke_notarization`       | Un-revoke a previously revoked notarization (Admin Only)                                                                                                         |
+| `update_authorized_creator`   | Update who can create a contract with a notarization (Admin Only)                                                                                                |
+| `add_executor`                | Authorize a module (LTC1) to bind to notarizations (Admin Only)                                                                                                  |
+| `remove_executor`             | De-authorize a module (Admin Only)                                                                                                                               |
+| `authorize_transfer`          | Authorize ownership transfer to a new DID, backed by a notarization reference (Admin Only)                                                                       |
+| `authorize_sales_toggle`      | Authorize a sales state change, backed by a notarization reference (Admin Only)                                                                                  |
+| `approve_identity`            | Whitelist a DID with a role (Admin Only). Requires mandatory `vc_data` (raw W3C Verifiable Credential bytes) and backing notarization as an on-chain audit trail |
+| `revoke_identity`             | Remove a DID from the whitelist (Admin Only, requires backing notarization)                                                                                      |
+| `verify_identity`             | Verify a DelegationToken belongs to a whitelisted DID with a required role (Public)                                                                              |
+| `claim_notarization`          | Start the contract creation process by claiming a notarization                                                                                                   |
+| `bind_executor`               | Bind a claimed notarization to a new contract ID                                                                                                                 |
+| `consume_transfer_ticket`     | Consume authorization to execute an ownership transfer                                                                                                           |
+| `consume_sales_toggle_ticket` | Consume authorization to execute a sales toggle                                                                                                                  |
+| `is_valid_notarization`       | Check if notarization is approved and not revoked                                                                                                                |
+| `get_notarization_info`       | Get full status of a registered notarization                                                                                                                     |
 
 ### LTC1 Module
 
-| Function              | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| `create_contract`     | Initialize new LTC1 with `Notarization<u256>` validation, accepts `owner_identity: ID`  |
-| `buy_token`           | Investors purchase tokens (IOTA → funding pool, includes dividend-stripping protection) |
-| `withdraw_funding`    | Owner withdraws raised capital (DID-verified)                                           |
-| `deposit_revenue`     | Owner deposits recovered funds (DID-verified)                                           |
-| `claim_revenue`       | Token holders claim proportional revenue (DID-verified)                                 |
-| `claim_revenue_owner` | Owner claims revenue from unsold shares + legacy revenue (DID-verified)                 |
-| `transfer_ownership`  | Transfer package ownership to a new DID (requires NPLEX approval)                       |
-| `transfer_token`      | DID-gated token transfer between investors                                              |
-| `toggle_sales`        | Toggle sales open/closed (requires NPLEX approval, consumes sales toggle ticket)        |
-| `verify_document`     | Verify document hash matches (Public)                                                   |
-| `balance`             | View token balance (Public)                                                             |
-| `claimed_revenue`     | View total revenue claimed by a token (Public)                                          |
+| Function              | Description                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `create_contract`     | Initialize new LTC1 with `Notarization<u256>` validation, accepts `owner_identity: ID`            |
+| `buy_token`           | Investors purchase tokens (IOTA → funding pool, includes dividend-stripping protection)           |
+| `withdraw_funding`    | Owner withdraws raised capital (DID-verified)                                                     |
+| `deposit_revenue`     | Owner deposits recovered funds (DID-verified)                                                     |
+| `claim_revenue`       | Token holders claim proportional revenue (DID-verified, **blocked when revoked**)                 |
+| `claim_revenue_owner` | Owner claims revenue from unsold shares + legacy revenue (DID-verified, **blocked when revoked**) |
+| `transfer_ownership`  | Transfer package ownership to a new DID (requires NPLEX approval)                                 |
+| `transfer_token`      | DID-gated token transfer between investors                                                        |
+| `toggle_sales`        | Toggle sales open/closed (requires NPLEX approval, consumes sales toggle ticket)                  |
+| `verify_document`     | Verify document hash matches (Public)                                                             |
+| `balance`             | View token balance (Public)                                                                       |
+| `claimed_revenue`     | View total revenue claimed by a token (Public)                                                    |
 
 ### Fractional Module
 
@@ -127,9 +136,12 @@ All events are emitted via `public(package)` emitter functions in `events.move`.
 - `NotarizationRegistered` — notarization registered
 - `NotarizationRevoked` / `NotarizationUnrevoked` — revocation state changes
 - `AuthorizedCreatorUpdated` — authorized creator changed for a notarization
-- `ExecutorAdded` / `ExecutorRemoved` — executor module authorization changes
-- `TransferAuthorized` / `TransferConsumed` — ownership transfer lifecycle
-- `SalesToggleAuthorized` / `SalesToggleConsumed` — sales toggle lifecycle
+- `ExecutorAdded` / `ExecutorRemoved` — executor module authorization changes (idempotent, no event if no-op)
+- `TransferAuthorized` / `TransferConsumed` / `TransferRevoked` — ownership transfer lifecycle
+- `SalesToggleAuthorized` / `SalesToggleConsumed` / `SalesToggleRevoked` — sales toggle lifecycle
+- `IdentityApproved` — new DID whitelisted (VC data stored in registry, not in event)
+- `IdentityRoleUpdated` — existing DID role changed (VC data stored in registry, not in event)
+- `IdentityRevoked` — DID removed from whitelist
 
 ### LTC1 Events
 
@@ -139,6 +151,7 @@ All events are emitted via `public(package)` emitter functions in `events.move`.
 - `FundingWithdrawn` — owner withdrew funding
 - `RevenueClaimedOwner` / `RevenueClaimedInvestor` — revenue claims
 - `OwnershipTransferred` — package ownership transferred to new DID
+- `OwnerDidUpdated` — owner DID set or changed on LTC1Package
 - `SalesToggled` — sales state changed
 
 ### Fractional Events
@@ -220,7 +233,7 @@ If the Owner never recovers any debts:
 - **buy_token()**: Blocked - No new token purchases
 - **withdraw_funding()**: Blocked - Owner cannot withdraw
 - **deposit_revenue()**: Blocked - Owner cannot deposit
-- **claim_revenue()**: Allowed - Holders can claim existing revenue forever
+- **claim_revenue()**: Blocked - Claims are not allowed when the contract is revoked (subject to change per future granular controls)
 - **transfer_token()**: Allowed - Tokens remain tradeable
 
 **Revocation reasons:**

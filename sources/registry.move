@@ -151,9 +151,13 @@ public struct NotarizedSaleToggle has store, copy, drop {
 /// Information about an approved DID identity
 /// The link between a user's address and their DID Identity is proven
 /// at runtime via DelegationToken, never stored statically.
+/// The vc_data field holds the raw bytes of the W3C Verifiable Credential
+/// (typically JWT) that justified this approval — an immutable audit trail.
 public struct ApprovedIdentity has store, copy, drop {
     /// Bitmask role: 1 = Institution, 2 = Investor, 4 = Admin (combinable)
     role: u8,
+    /// Raw bytes of the W3C Verifiable Credential used for this approval
+    vc_data: vector<u8>,
 }
 
 // ==================== Initialization ====================
@@ -396,27 +400,29 @@ public entry fun authorize_sales_toggle(
 
 /// Whitelist a DID Identity for a specific role (Admin Only)
 /// role: 1 = Institution, 2 = Investor, 4 = Admin (bitmask, combinable up to 7)
+/// vc_data: Mandatory raw bytes of the W3C Verifiable Credential (JWT/hash) that
+///          justified this approval. Stored permanently as an on-chain audit trail.
 public entry fun approve_identity(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     identity_id: ID,
     role: u8,
+    vc_data: vector<u8>,
     backing_notarization: &Notarization<u256>,
 ) {
     let backing_notarization_id = object::id(backing_notarization);
     assert!(role >= 1 && role <= 7, E_INVALID_ROLE);
+    assert!(!std::vector::is_empty(&vc_data), E_INVALID_ROLE); // VC data must not be empty
 
     if (table::contains(&registry.approved_identities, identity_id)) {
-        // Update existing role
+        // Update existing identity — replace role and VC data
         let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
         let old_role = info.role;
-        if (old_role == role) {
-            return
-        };
         info.role = role;
+        info.vc_data = vc_data;
         events::emit_identity_role_updated(identity_id, old_role, role, backing_notarization_id);
     } else {
-        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
+        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role, vc_data });
         events::emit_identity_approved(identity_id, role, backing_notarization_id);
     };
 }
