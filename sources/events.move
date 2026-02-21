@@ -18,17 +18,20 @@ module nplex::events {
     /// Emitted when a notarization is revoked
     public struct NotarizationRevoked has copy, drop {
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when a notarization revocation is undone
     public struct NotarizationUnrevoked has copy, drop {
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when the authorized creator for a notarization is updated
     public struct AuthorizedCreatorUpdated has copy, drop {
         notarization_id: iota::object::ID,
         new_creator: address,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when an executor module is added
@@ -86,11 +89,13 @@ module nplex::events {
     public struct IdentityApproved has copy, drop {
         identity_id: iota::object::ID,
         role: u8,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when an Identity is revoked from the whitelist
     public struct IdentityRevoked has copy, drop {
         identity_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when an investor buys LTC1 tokens
@@ -197,23 +202,27 @@ module nplex::events {
 
     public(package) fun emit_notarization_revoked(
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     ) {
-        iota::event::emit(NotarizationRevoked { notarization_id });
+        iota::event::emit(NotarizationRevoked { notarization_id, backing_notarization_id });
     }
 
     public(package) fun emit_notarization_unrevoked(
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     ) {
-        iota::event::emit(NotarizationUnrevoked { notarization_id });
+        iota::event::emit(NotarizationUnrevoked { notarization_id, backing_notarization_id });
     }
 
     public(package) fun emit_authorized_creator_updated(
         notarization_id: iota::object::ID,
         new_creator: address,
+        backing_notarization_id: iota::object::ID,
     ) {
         iota::event::emit(AuthorizedCreatorUpdated {
             notarization_id,
             new_creator,
+            backing_notarization_id,
         });
     }
 
@@ -366,18 +375,22 @@ module nplex::events {
     public(package) fun emit_identity_approved(
         identity_id: iota::object::ID,
         role: u8,
+        backing_notarization_id: iota::object::ID,
     ) {
         iota::event::emit(IdentityApproved {
             identity_id,
             role,
+            backing_notarization_id,
         });
     }
 
     public(package) fun emit_identity_revoked(
         identity_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     ) {
         iota::event::emit(IdentityRevoked {
             identity_id,
+            backing_notarization_id,
         });
     }
 

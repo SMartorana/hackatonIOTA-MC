@@ -62,6 +62,9 @@ module nplex::fractional_tests {
     /// Stable mock ID for backing transfer/toggle authorizations in tests
     fun authorization_notarization_id(): ID { object::id_from_address(@0xAA1) }
 
+    /// Stable mock ID for backing admin actions in tests
+    fun backing_notarization_id(): ID { object::id_from_address(@0xBACE) }
+
     /// Identity IDs for test users
     fun owner_identity_id(): ID { object::id_from_address(@0xB1D) }
     fun investor_identity_id(): ID { object::id_from_address(@0xC1D) }
@@ -78,8 +81,8 @@ module nplex::fractional_tests {
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
         // Whitelist identities for DID verification
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, backing_notarization_id());
 
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);

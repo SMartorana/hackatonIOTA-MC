@@ -33,6 +33,9 @@ module nplex::ltc1_tests {
     /// Stable mock ID for backing transfer/toggle authorizations in tests
     fun authorization_notarization_id(): ID { object::id_from_address(@0xAA1) }
 
+    /// Stable mock ID for backing admin actions in tests
+    fun backing_notarization_id(): ID { object::id_from_address(@0xBACE) }
+
     /// Identity IDs for test users (used as controller_of in DelegationTokens)
     fun owner_identity_id(): ID { object::id_from_address(@0xB1D) }
     fun investor_identity_id(): ID { object::id_from_address(@0xC1D) }
@@ -54,13 +57,13 @@ module nplex::ltc1_tests {
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
         // Whitelist OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
         // Whitelist INVESTOR as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, backing_notarization_id());
         // Whitelist INVESTOR2 as Investor (role 2)
-        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2);
+        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2, backing_notarization_id());
         // Whitelist NEW_OWNER as Institution (role 1)
-        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, backing_notarization_id());
 
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
@@ -403,7 +406,7 @@ module nplex::ltc1_tests {
             // ONLY Authorize Witness (no notarization registered)
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist OWNER identity for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -474,7 +477,7 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
             // Whitelist OWNER identity for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
 
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -1043,11 +1046,11 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, backing_notarization_id());
             
             // 2. Update Authorized Creator to NEW_OWNER (A2)
-            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, backing_notarization_id());
             
             dynamic_notarization::transfer(notarization_obj, NEW_OWNER, &clock, ctx(&mut scenario));
             
@@ -1112,11 +1115,11 @@ module nplex::ltc1_tests {
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
             // Whitelist identities for DID verification
-            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1);
-            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, backing_notarization_id());
             
             // Update Authorized Creator to NEW_OWNER (A2)
-            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, backing_notarization_id());
             
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
             

@@ -13,6 +13,9 @@ module nplex::did_tests {
     // Helper to create a dummy ID for a DID
     fun did_id(addr: address): ID { object::id_from_address(addr) }
 
+    /// Stable mock ID for backing notarization in tests
+    fun backing_notarization_id(): ID { object::id_from_address(@0xBACE) }
+
     #[test]
     fun test_did_lifecycle() {
         let mut scenario = test_scenario::begin(ADMIN);
@@ -32,7 +35,8 @@ module nplex::did_tests {
                 &mut registry,
                 &admin_cap,
                 did_id(INSTITUTION_DID),
-                registry::role_institution()
+                registry::role_institution(),
+                backing_notarization_id(),
             );
 
             test_scenario::return_shared(registry);
@@ -63,7 +67,7 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID));
+            registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), backing_notarization_id());
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -104,8 +108,8 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
-            registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID));
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), backing_notarization_id());
+            registry::revoke_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), backing_notarization_id());
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -156,8 +160,8 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor());
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), backing_notarization_id());
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INVESTOR_DID), registry::role_investor(), backing_notarization_id());
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -196,7 +200,7 @@ module nplex::did_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             // Register as Institution only
-            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution());
+            registry::approve_identity(&mut registry, &admin_cap, did_id(INSTITUTION_DID), registry::role_institution(), backing_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };

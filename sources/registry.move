@@ -243,7 +243,8 @@ public entry fun update_authorized_creator(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     notarization_id: ID,
-    new_creator: address
+    new_creator: address,
+    backing_notarization_id: ID,
 ) {
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
@@ -251,35 +252,37 @@ public entry fun update_authorized_creator(
     
     hash_info.authorized_creator = new_creator;
 
-    events::emit_authorized_creator_updated(notarization_id, new_creator);
+    events::emit_authorized_creator_updated(notarization_id, new_creator, backing_notarization_id);
 }
 
 /// Revoke a previously approved notarization
 public entry fun revoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    notarization_id: ID
+    notarization_id: ID,
+    backing_notarization_id: ID,
 ) {
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(!hash_info.is_revoked, E_NOTARIZATION_ALREADY_REVOKED);
     hash_info.is_revoked = true;
 
-    events::emit_notarization_revoked(notarization_id);
+    events::emit_notarization_revoked(notarization_id, backing_notarization_id);
 }
 
 /// Un-revoke a notarization
 public entry fun unrevoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    notarization_id: ID
+    notarization_id: ID,
+    backing_notarization_id: ID,
 ) {
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(hash_info.is_revoked, E_NOTARIZATION_NOT_REVOKED);
     hash_info.is_revoked = false;
 
-    events::emit_notarization_unrevoked(notarization_id);
+    events::emit_notarization_unrevoked(notarization_id, backing_notarization_id);
 }
 
 /// Add an allowed executor module
@@ -304,6 +307,27 @@ public entry fun remove_executor<T>(
         let _: bool = df::remove(&mut registry.id, ExecutorKey<T> {});
         events::emit_executor_removed(std::type_name::get<T>().into_string());
     };
+}
+
+/// Finalize hash usage by binding it to an LTC1 contract ID
+public fun bind_executor<T: drop>(
+    registry: &mut NPLEXRegistry,
+    claim: NotarizationClaim,
+    new_contract_id: ID,
+    _witness: T
+) {
+    // Verify witness type is allowed
+    assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
+
+    let NotarizationClaim { notarization_id, document_hash: _ } = claim;
+    
+    let notarization_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
+    
+    // Double check
+    assert!(std::option::is_none(&notarization_info.contract_id), E_NOTARIZATION_ALREADY_USED);
+    
+    // Mark as used
+    std::option::fill(&mut notarization_info.contract_id, new_contract_id);
 }
 
 /// Authorize an Ownership Transfer for a specific contract
@@ -363,6 +387,7 @@ public entry fun approve_identity(
     _admin_cap: &NPLEXAdminCap,
     identity_id: ID,
     role: u8,
+    backing_notarization_id: ID,
 ) {
     assert!(role >= 1 && role <= 7, E_INVALID_ROLE);
 
@@ -374,7 +399,7 @@ public entry fun approve_identity(
         table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
     };
 
-    events::emit_identity_approved(identity_id, role);
+    events::emit_identity_approved(identity_id, role, backing_notarization_id);
 }
 
 /// Remove a DID Identity from the whitelist (Admin Only)
@@ -382,11 +407,12 @@ public entry fun revoke_identity(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     identity_id: ID,
+    backing_notarization_id: ID,
 ) {
     assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
     table::remove(&mut registry.approved_identities, identity_id);
 
-    events::emit_identity_revoked(identity_id);
+    events::emit_identity_revoked(identity_id, backing_notarization_id);
 }
 
 // ==================== Validation Functions ====================
@@ -412,27 +438,6 @@ public fun claim_notarization(
     assert!(tx_context::sender(ctx) == notarization_info.authorized_creator, E_UNAUTHORIZED_CREATOR);
     
     NotarizationClaim { notarization_id, document_hash: notarization_info.document_hash }
-}
-
-/// Finalize hash usage by binding it to an LTC1 contract ID
-public fun bind_executor<T: drop>(
-    registry: &mut NPLEXRegistry,
-    claim: NotarizationClaim,
-    new_contract_id: ID,
-    _witness: T
-) {
-    // Verify witness type is allowed
-    assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
-
-    let NotarizationClaim { notarization_id, document_hash: _ } = claim;
-    
-    let notarization_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
-    
-    // Double check
-    assert!(std::option::is_none(&notarization_info.contract_id), E_NOTARIZATION_ALREADY_USED);
-    
-    // Mark as used
-    std::option::fill(&mut notarization_info.contract_id, new_contract_id);
 }
 
 /// Consume a transfer ticket to allow Bond transfer

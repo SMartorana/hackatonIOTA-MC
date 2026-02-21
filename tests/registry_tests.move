@@ -28,6 +28,9 @@ module nplex::registry_tests {
     // Witness for testing
     public struct TestWitness has drop {}
 
+    /// Stable mock ID for backing notarization in tests
+    fun backing_notarization_id(): ID { object::id_from_address(@0xBACE) }
+
     // Witness for unauthorized testing
     public struct UnauthorizedWitness has drop {}
 
@@ -80,7 +83,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
             
-            registry::revoke_notarization(&mut registry, &admin_cap, revoked_notarization_id());
+            registry::revoke_notarization(&mut registry, &admin_cap, revoked_notarization_id(), backing_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(scenario, admin_cap);
@@ -219,7 +222,7 @@ module nplex::registry_tests {
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
+            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id(), backing_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -241,7 +244,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
+            registry::revoke_notarization(&mut registry, &admin_cap, verified_notarization_id(), backing_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
@@ -254,7 +257,7 @@ module nplex::registry_tests {
             // Alice tries to take admin_cap but doesn't have it!
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
             
-            registry::unrevoke_notarization(&mut registry, &admin_cap, verified_notarization_id());
+            registry::unrevoke_notarization(&mut registry, &admin_cap, verified_notarization_id(), backing_notarization_id());
             
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -427,7 +430,7 @@ module nplex::registry_tests {
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
 
             // Approve Identity for ALICE
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, backing_notarization_id());
             
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
             
@@ -470,7 +473,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, backing_notarization_id());
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, authorized_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -501,7 +504,7 @@ module nplex::registry_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1);
+            registry::approve_identity(&mut registry, &admin_cap, alice_identity_id(), 1, backing_notarization_id());
             registry::authorize_transfer(&mut registry, &admin_cap, package_id, new_owner, alice_identity_id(), verified_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
