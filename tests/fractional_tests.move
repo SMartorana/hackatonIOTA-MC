@@ -62,9 +62,6 @@ module nplex::fractional_tests {
     /// Stable mock ID for backing transfer/toggle authorizations in tests
     fun authorization_notarization_id(): ID { object::id_from_address(@0xAA1) }
 
-    /// Stable mock ID for backing admin actions in tests
-    fun backing_notarization_id(): ID { object::id_from_address(@0xBACE) }
-
     /// Identity IDs for test users
     fun owner_identity_id(): ID { object::id_from_address(@0xB1D) }
     fun investor_identity_id(): ID { object::id_from_address(@0xC1D) }
@@ -75,15 +72,29 @@ module nplex::fractional_tests {
         next_tx(scenario, ADMIN);
         registry::init_for_testing(ctx(scenario));
 
+        // Create backing notarization for admin use
+        next_tx(scenario, ADMIN);
+        {
+            let clock = clock::create_for_testing(ctx(scenario));
+            let state = notarization::new_state_from_generic<u256>(99u256, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(scenario)
+            );
+            dynamic_notarization::transfer(notarization_obj, ADMIN, &clock, ctx(scenario));
+            clock::destroy_for_testing(clock);
+        };
+
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+        let backing_notarization = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
         // Whitelist identities for DID verification
-        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, backing_notarization_id());
-        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, backing_notarization_id());
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_notarization);
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, &backing_notarization);
 
+        test_scenario::return_to_sender(scenario, backing_notarization);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }

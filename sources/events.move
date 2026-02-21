@@ -85,10 +85,18 @@ module nplex::events {
         owner_did: option::Option<address>,
     }
 
-    /// Emitted when an Identity is approved/whitelisted
+    /// Emitted when an Identity is approved/whitelisted for the first time
     public struct IdentityApproved has copy, drop {
         identity_id: iota::object::ID,
         role: u8,
+        backing_notarization_id: iota::object::ID,
+    }
+
+    /// Emitted when an already-approved Identity's role is updated
+    public struct IdentityRoleUpdated has copy, drop {
+        identity_id: iota::object::ID,
+        old_role: u8,
+        new_role: u8,
         backing_notarization_id: iota::object::ID,
     }
 
@@ -380,6 +388,20 @@ module nplex::events {
         iota::event::emit(IdentityApproved {
             identity_id,
             role,
+            backing_notarization_id,
+        });
+    }
+
+    public(package) fun emit_identity_role_updated(
+        identity_id: iota::object::ID,
+        old_role: u8,
+        new_role: u8,
+        backing_notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(IdentityRoleUpdated {
+            identity_id,
+            old_role,
+            new_role,
             backing_notarization_id,
         });
     }
