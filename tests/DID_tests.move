@@ -2,7 +2,9 @@
 #[test_only]
 module nplex::did_tests {
     use iota::test_scenario;
-    use iota_identity::controller;
+    use iota::clock;
+    use iota_identity::controller::{Self, ControllerCap};
+    use iota_identity::identity;
     
     use nplex::registry::{Self, NPLEXRegistry, NPLEXAdminCap};
 
@@ -216,6 +218,213 @@ module nplex::did_tests {
             controller::destroy_delegation_token_for_testing(token);
             test_scenario::return_shared(registry);
         };
+        test_scenario::end(scenario);
+    }
+
+    // ==========================================================================
+    // Realistic DID Tests — using actual Identity + ControllerCap + borrow flow
+    // ==========================================================================
+
+    #[test]
+    fun test_realistic_did_verification() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 1. Initialize NPLEX Registry
+        registry::init_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 2. INSTITUTION_DID creates a real on-chain Identity
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        let institution_identity_id = identity::new_with_controller(
+            option::none(),           // no DID doc bytes (not needed for our test)
+            INSTITUTION_DID,          // controller address
+            false,                    // can_delegate
+            &clock,
+            test_scenario::ctx(&mut scenario),
+        );
+
+        // 3. INVESTOR_DID creates a real on-chain Identity
+        test_scenario::next_tx(&mut scenario, INVESTOR_DID);
+        let investor_identity_id = identity::new_with_controller(
+            option::none(),
+            INVESTOR_DID,
+            false,
+            &clock,
+            test_scenario::ctx(&mut scenario),
+        );
+
+        // 4. Admin whitelists both real Identity IDs
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+
+            // Whitelist institution with role_institution, investor with role_investor
+            registry::approve_identity(
+                &mut registry, &admin_cap,
+                institution_identity_id,
+                registry::role_institution(),
+                backing_notarization_id(),
+            );
+            registry::approve_identity(
+                &mut registry, &admin_cap,
+                investor_identity_id,
+                registry::role_investor(),
+                backing_notarization_id(),
+            );
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 5. Institution borrows DelegationToken from their real ControllerCap
+        //    and verifies identity — this mirrors the exact frontend PTB flow
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut controller_cap = test_scenario::take_from_sender<ControllerCap>(&scenario);
+
+            // Borrow the DelegationToken (hot potato pattern)
+            let (token, borrow) = controller::borrow(&mut controller_cap);
+
+            // Verify — this checks token.controller_of == institution_identity_id
+            registry::verify_identity(&registry, &token, registry::role_institution());
+
+            // Return the token (mandatory — hot potato)
+            controller::put_back(&mut controller_cap, token, borrow);
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, controller_cap);
+        };
+
+        // 6. Investor does the same
+        test_scenario::next_tx(&mut scenario, INVESTOR_DID);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut controller_cap = test_scenario::take_from_sender<ControllerCap>(&scenario);
+
+            let (token, borrow) = controller::borrow(&mut controller_cap);
+            registry::verify_identity(&registry, &token, registry::role_investor());
+            controller::put_back(&mut controller_cap, token, borrow);
+
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, controller_cap);
+        };
+
+        clock::destroy_for_testing(clock);
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_IDENTITY_WRONG_ROLE)]
+    fun test_realistic_wrong_role_fails() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 1. Initialize NPLEX Registry
+        registry::init_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 2. INSTITUTION_DID creates an Identity
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        let institution_identity_id = identity::new_with_controller(
+            option::none(),
+            INSTITUTION_DID,
+            false,
+            &clock,
+            test_scenario::ctx(&mut scenario),
+        );
+
+        // 3. Admin whitelists as Institution only
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::approve_identity(
+                &mut registry, &admin_cap,
+                institution_identity_id,
+                registry::role_institution(),
+                backing_notarization_id(),
+            );
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 4. Institution tries to verify as Investor — should abort!
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut controller_cap = test_scenario::take_from_sender<ControllerCap>(&scenario);
+
+            let (token, borrow) = controller::borrow(&mut controller_cap);
+
+            // This should abort with E_IDENTITY_WRONG_ROLE
+            registry::verify_identity(&registry, &token, registry::role_investor());
+
+            controller::put_back(&mut controller_cap, token, borrow);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, controller_cap);
+        };
+
+        clock::destroy_for_testing(clock);
+        test_scenario::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = registry::E_IDENTITY_NOT_APPROVED)]
+    fun test_realistic_revoked_identity_fails() {
+        let mut scenario = test_scenario::begin(ADMIN);
+        let clock = clock::create_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 1. Initialize NPLEX Registry
+        registry::init_for_testing(test_scenario::ctx(&mut scenario));
+
+        // 2. INSTITUTION_DID creates an Identity
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        let institution_identity_id = identity::new_with_controller(
+            option::none(),
+            INSTITUTION_DID,
+            false,
+            &clock,
+            test_scenario::ctx(&mut scenario),
+        );
+
+        // 3. Admin approves, then immediately revokes
+        test_scenario::next_tx(&mut scenario, ADMIN);
+        {
+            let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
+            registry::approve_identity(
+                &mut registry, &admin_cap,
+                institution_identity_id,
+                registry::role_institution(),
+                backing_notarization_id(),
+            );
+            registry::revoke_identity(
+                &mut registry, &admin_cap,
+                institution_identity_id,
+                backing_notarization_id(),
+            );
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
+        };
+
+        // 4. Institution tries to verify — should abort!
+        test_scenario::next_tx(&mut scenario, INSTITUTION_DID);
+        {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
+            let mut controller_cap = test_scenario::take_from_sender<ControllerCap>(&scenario);
+
+            let (token, borrow) = controller::borrow(&mut controller_cap);
+
+            // Should abort with E_IDENTITY_NOT_APPROVED
+            registry::verify_identity(&registry, &token, registry::role_institution());
+
+            controller::put_back(&mut controller_cap, token, borrow);
+            test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, controller_cap);
+        };
+
+        clock::destroy_for_testing(clock);
         test_scenario::end(scenario);
     }
 }
