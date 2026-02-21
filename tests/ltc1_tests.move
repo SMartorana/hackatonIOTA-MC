@@ -4,7 +4,7 @@
 
 #[test_only]
 module nplex::ltc1_tests {
-    use nplex::ltc1::{Self, LTC1Package, LTC1Token, OwnerBond, LTC1Witness};
+    use nplex::ltc1::{Self, LTC1Package, LTC1Token, LTC1Witness};
     use nplex::registry::{Self, NPLEXRegistry, NPLEXAdminCap};
     use iota::test_scenario::{Self, Scenario, next_tx, ctx};
     use iota::coin::{Self, Coin};
@@ -14,6 +14,7 @@ module nplex::ltc1_tests {
     use iota_notarization::notarization;
     use iota_notarization::dynamic_notarization;
     use iota_notarization::timelock;
+    use iota_identity::controller;
 
     // Test Users
     const ADMIN: address = @0xAD;
@@ -32,6 +33,12 @@ module nplex::ltc1_tests {
     /// Stable mock ID for backing transfer/toggle authorizations in tests
     fun authorization_notarization_id(): ID { object::id_from_address(@0xAA1) }
 
+    /// Identity IDs for test users (used as controller_of in DelegationTokens)
+    fun owner_identity_id(): ID { object::id_from_address(@0xB1D) }
+    fun investor_identity_id(): ID { object::id_from_address(@0xC1D) }
+    fun investor2_identity_id(): ID { object::id_from_address(@0xE1D) }
+    fun new_owner_identity_id(): ID { object::id_from_address(@0xD1D) }
+
     // ==================== Helpers ====================
 
     fun setup_registry(scenario: &mut Scenario) {
@@ -39,13 +46,36 @@ module nplex::ltc1_tests {
         next_tx(scenario, ADMIN);
         registry::init_for_testing(ctx(scenario));
 
-        // 2. Authorize LTC1 executor
+        // 2. Create backing notarization for admin use
+        next_tx(scenario, ADMIN);
+        {
+            let clock = clock::create_for_testing(ctx(scenario));
+            let state = notarization::new_state_from_generic<u256>(99u256, option::none());
+            let notarization_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(scenario)
+            );
+            dynamic_notarization::transfer(notarization_obj, ADMIN, &clock, ctx(scenario));
+            clock::destroy_for_testing(clock);
+        };
+
+        // 3. Authorize LTC1 executor + whitelist test identities
         next_tx(scenario, ADMIN);
         let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
         let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(scenario);
+        let backing_notarization = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
 
         registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
 
+        // Whitelist OWNER as Institution (role 1)
+        registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_notarization);
+        // Whitelist INVESTOR as Investor (role 2)
+        registry::approve_identity(&mut registry, &admin_cap, investor_identity_id(), 2, &backing_notarization);
+        // Whitelist INVESTOR2 as Investor (role 2)
+        registry::approve_identity(&mut registry, &admin_cap, investor2_identity_id(), 2, &backing_notarization);
+        // Whitelist NEW_OWNER as Institution (role 1)
+        registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &backing_notarization);
+
+        test_scenario::return_to_sender(scenario, backing_notarization);
         test_scenario::return_shared(registry);
         test_scenario::return_to_sender(scenario, admin_cap);
     }
@@ -90,6 +120,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(scenario);
             let clock = clock::create_for_testing(ctx(scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(scenario));
 
             ltc1::create_contract<IOTA>(
                 &mut registry,
@@ -100,21 +131,25 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(scenario)
             );
+
+            controller::destroy_delegation_token_for_testing(did_token);
 
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
         };
 
-        // Step 3: Retrieve package_id from the OwnerBond
+        // Step 3: Retrieve package_id from the shared LTC1Package
         next_tx(scenario, OWNER);
         let package_id = {
-            let bond = test_scenario::take_from_sender<OwnerBond>(scenario);
-            let id = ltc1::bond_package_id(&bond);
-            test_scenario::return_to_sender(scenario, bond);
+            let package = test_scenario::take_shared<LTC1Package<IOTA>>(scenario);
+            let id = object::id(&package);
+            test_scenario::return_shared(package);
             id
         };
         package_id
@@ -136,7 +171,9 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -175,8 +212,10 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
 
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -192,8 +231,10 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost_2, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(investor2_identity_id(), ctx(&mut scenario));
 
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount_2, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount_2, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -222,14 +263,14 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, payment, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 4. Claim Revenue (Investor)
@@ -242,7 +283,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -264,7 +307,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -287,13 +332,13 @@ module nplex::ltc1_tests {
          {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let mut bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &mut bond, ctx(&mut scenario));
+            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 5.5 Verify Owner Revenue (999,700 NANOS)
@@ -337,7 +382,9 @@ module nplex::ltc1_tests {
             let payment = mint_coins(cost, &mut scenario);
 
             // This should fail
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -369,6 +416,15 @@ module nplex::ltc1_tests {
 
             // ONLY Authorize Witness (no notarization registered)
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+            // Whitelist OWNER identity for DID verification — create a backing notarization
+            let clock = clock::create_for_testing(ctx(&mut scenario));
+            let state = notarization::new_state_from_generic<u256>(99u256, option::none());
+            let backing_obj = dynamic_notarization::new<u256>(
+                state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
+            );
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &backing_obj);
+            dynamic_notarization::transfer(backing_obj, ADMIN, &clock, ctx(&mut scenario));
+            clock::destroy_for_testing(clock);
 
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
@@ -383,6 +439,7 @@ module nplex::ltc1_tests {
             let notarization_obj = dynamic_notarization::new<u256>(
                 state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
             );
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
@@ -392,9 +449,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -433,6 +493,8 @@ module nplex::ltc1_tests {
             );
             let real_id = object::id(&notarization_obj);
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
+            // Whitelist OWNER identity for DID verification — use existing notarization_obj as backing ref
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
 
             clock::destroy_for_testing(clock);
@@ -446,6 +508,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
@@ -455,9 +518,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -465,14 +531,14 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
-    // Test owner bond transfer
-    // Arrange: Contract created. Admin authorizes transfer of Bond to NEW_OWNER.
-    // Act: Owner calls transfer_bond.
-    // Assert: Bond is successfully moved to NEW_OWNER.
+    // Test ownership transfer
+    // Arrange: Contract created. Admin authorizes transfer to NEW_OWNER.
+    // Act: Owner calls transfer_ownership.
+    // Assert: package.owner_identity is updated to new_owner_identity.
     // Scenario: Owner sells the deal to another servicer. Admin approves the transfer.
-    // Original Owner executes transfer. New Owner receives the Bond object.
+    // Original Owner executes transfer. New Owner's DID is now the owner.
     #[test]
-    fun test_owner_bond_transfer() {
+    fun test_ownership_transfer() {
         let mut scenario = test_scenario::begin(ADMIN);
         setup_registry(&mut scenario);
 
@@ -490,6 +556,7 @@ module nplex::ltc1_tests {
                 &admin_cap,
                 package_id,
                 NEW_OWNER,
+                new_owner_identity_id(),
                 authorization_notarization_id()
             );
 
@@ -497,35 +564,40 @@ module nplex::ltc1_tests {
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // 4. Transfer Bond (Owner)
+        // 4. Transfer Ownership (Owner)
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let sender_did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             
-            ltc1::transfer_bond(
+            ltc1::transfer_ownership<IOTA>(
                 &mut registry,
-                bond,
+                &mut package,
                 NEW_OWNER,
+                new_owner_identity_id(),
+                &sender_did_token,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(sender_did_token);
 
             test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
         };
 
-        // 5. Verify New Owner has Bond/Revenue rights
+        // 5. Verify New Owner has revenue rights via DID
         next_tx(&mut scenario, NEW_OWNER);
         {
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
-            assert!(object::id(&bond) != object::id_from_address(@0x0), 0); // Just check it exists
-            test_scenario::return_to_sender(&scenario, bond);
+            let package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            assert!(ltc1::get_package_owner_identity<IOTA>(&package) == new_owner_identity_id(), 0);
+            test_scenario::return_shared(package);
         };
 
         test_scenario::end(scenario);
     }
     // Test withdraw funding
     // Arrange: Investor buys tokens, funding the pool.
-    // Act: Owner withdraws the raised capital using OwnerBond.
+    // Act: Owner withdraws the raised capital.
     // Assert: Owner's coin balance increases by the withdrawn amount.
     // Scenario: 100k tokens sold for 100,000,000 NANOS (0.1 IOTA). Pool has 100M NANOS.
     // Owner withdraws 100M NANOS. Owner receives 100M NANOS.
@@ -549,8 +621,10 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
 
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -561,13 +635,13 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::withdraw_funding<IOTA>(&registry, &mut package, &bond, cost, ctx(&mut scenario));
+            ltc1::withdraw_funding<IOTA>(&registry, &mut package, cost, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
         
         // 4. Verify Owner Balance
@@ -611,8 +685,10 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
 
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -623,13 +699,13 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::withdraw_funding<IOTA>(&registry, &mut package, &bond, cost, ctx(&mut scenario));
+            ltc1::withdraw_funding<IOTA>(&registry, &mut package, cost, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // Verify Owner actually got the money
@@ -645,18 +721,21 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let admin_cap = test_scenario::take_from_sender<NPLEXAdminCap>(&scenario);
-            registry::authorize_transfer(&mut registry, &admin_cap, package_id, NEW_OWNER, authorization_notarization_id());
+            registry::authorize_transfer(&mut registry, &admin_cap, package_id, NEW_OWNER, new_owner_identity_id(), authorization_notarization_id());
             test_scenario::return_shared(registry);
             test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
-        // 5. Handover: Transfer Bond (Owner -> NEW_OWNER)
+        // 5. Handover: Transfer Ownership (Owner -> NEW_OWNER)
         next_tx(&mut scenario, OWNER);
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
-            ltc1::transfer_bond(&mut registry, bond, NEW_OWNER, ctx(&mut scenario));
+            let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
+            let sender_did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::transfer_ownership<IOTA>(&mut registry, &mut package, NEW_OWNER, new_owner_identity_id(), &sender_did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(sender_did_token);
             test_scenario::return_shared(registry);
+            test_scenario::return_shared(package);
         };
 
         // 6. Revenue 1: NEW_OWNER deposits 1M NANOS
@@ -666,14 +745,14 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount_1, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(new_owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, payment, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 7. Claim 1: INVESTOR claims
@@ -685,7 +764,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -703,8 +784,12 @@ module nplex::ltc1_tests {
         // 8. Secondary Market: INVESTOR -> INVESTOR2
         next_tx(&mut scenario, INVESTOR);
         {
+            let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let token = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            iota::transfer::public_transfer(token, INVESTOR2);
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::transfer_token(&registry, token, INVESTOR2, &did_token);
+            controller::destroy_delegation_token_for_testing(did_token);
+            test_scenario::return_shared(registry);
         };
 
         // 9. Revenue 2: NEW_OWNER deposits another 1M NANOS
@@ -714,14 +799,14 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount_2, &mut scenario);
+            let did_token = controller::create_delegation_token_for_testing(new_owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, payment, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 10. Claim 2: INVESTOR2 claims
@@ -735,7 +820,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -758,13 +845,13 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let mut bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
+            let did_token = controller::create_delegation_token_for_testing(new_owner_identity_id(), ctx(&mut scenario));
 
-            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &mut bond, ctx(&mut scenario));
+            ltc1::claim_revenue_owner<IOTA>(&registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // Verify Owner Amount
@@ -796,6 +883,7 @@ module nplex::ltc1_tests {
             let notarization_obj = dynamic_notarization::new<u256>(
                 state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
             );
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
@@ -805,9 +893,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -833,6 +924,7 @@ module nplex::ltc1_tests {
             let notarization_obj = dynamic_notarization::new<u256>(
                 state, option::none(), option::none(), timelock::none(), &clock, ctx(&mut scenario)
             );
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             ltc1::create_contract<IOTA>(
                 &mut registry,
                 string::utf8(b"LTC1 Package"),
@@ -842,9 +934,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 960000, // TOO HIGH (Max is 950000)
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
             test_scenario::return_shared(registry);
@@ -878,7 +973,9 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(buy_amount * TOKEN_PRICE, &mut scenario);
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -887,12 +984,12 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount, &mut scenario);
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, payment, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 3. Claim 1 (Should Succeed)
@@ -902,7 +999,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -924,7 +1023,9 @@ module nplex::ltc1_tests {
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
 
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
@@ -962,9 +1063,12 @@ module nplex::ltc1_tests {
             
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+            // Whitelist identities for DID verification — use the notarization_obj as backing ref
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &notarization_obj);
             
             // 2. Update Authorized Creator to NEW_OWNER (A2)
-            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, &notarization_obj);
             
             dynamic_notarization::transfer(notarization_obj, NEW_OWNER, &clock, ctx(&mut scenario));
             
@@ -979,6 +1083,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(new_owner_identity_id(), ctx(&mut scenario));
             
             ltc1::create_contract<IOTA>(
                 &mut registry,
@@ -989,9 +1094,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                new_owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
@@ -1024,9 +1132,12 @@ module nplex::ltc1_tests {
             
             registry::register_notarization(&mut registry, &admin_cap, real_id, DOCUMENT_HASH, OWNER, &clock, ctx(&mut scenario));
             registry::add_executor<LTC1Witness>(&mut registry, &admin_cap);
+            // Whitelist identities for DID verification — use the notarization_obj as backing ref
+            registry::approve_identity(&mut registry, &admin_cap, owner_identity_id(), 1, &notarization_obj);
+            registry::approve_identity(&mut registry, &admin_cap, new_owner_identity_id(), 1, &notarization_obj);
             
             // Update Authorized Creator to NEW_OWNER (A2)
-            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER);
+            registry::update_authorized_creator(&mut registry, &admin_cap, real_id, NEW_OWNER, &notarization_obj);
             
             dynamic_notarization::transfer(notarization_obj, OWNER, &clock, ctx(&mut scenario));
             
@@ -1041,6 +1152,7 @@ module nplex::ltc1_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let notarization_obj = test_scenario::take_from_sender<notarization::Notarization<u256>>(&scenario);
             let clock = clock::create_for_testing(ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
             
             ltc1::create_contract<IOTA>(
                 &mut registry,
@@ -1051,9 +1163,12 @@ module nplex::ltc1_tests {
                 NOMINAL_VALUE,
                 SPLIT_BPS,
                 string::utf8(b"ipfs://metadata"),
+                owner_identity_id(),
+                &did_token,
                 &clock,
                 ctx(&mut scenario)
             );
+            controller::destroy_delegation_token_for_testing(did_token);
             
             notarization::destroy(notarization_obj, &clock);
             clock::destroy_for_testing(clock);
@@ -1091,7 +1206,9 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1105,7 +1222,9 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1137,7 +1256,9 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1156,7 +1277,9 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1170,7 +1293,9 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1209,7 +1334,9 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let payment = mint_coins(cost, &mut scenario);
-            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::buy_token<IOTA>(&registry, &mut package, payment, buy_amount, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1228,7 +1355,9 @@ module nplex::ltc1_tests {
         {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::toggle_sales<IOTA>(&mut registry, &mut package, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
         };
@@ -1239,12 +1368,12 @@ module nplex::ltc1_tests {
         {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            let bond = test_scenario::take_from_sender<OwnerBond>(&scenario);
             let payment = mint_coins(revenue_amount, &mut scenario);
-            ltc1::deposit_revenue<IOTA>(&registry, &mut package, &bond, payment, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(owner_identity_id(), ctx(&mut scenario));
+            ltc1::deposit_revenue<IOTA>(&registry, &mut package, payment, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
-            test_scenario::return_to_sender(&scenario, bond);
         };
 
         // 6. Investor claims revenue (should work even with sales closed)
@@ -1253,7 +1382,9 @@ module nplex::ltc1_tests {
             let registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let mut package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
             let mut token = test_scenario::take_from_sender<LTC1Token>(&scenario);
-            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, ctx(&mut scenario));
+            let did_token = controller::create_delegation_token_for_testing(investor_identity_id(), ctx(&mut scenario));
+            ltc1::claim_revenue<IOTA>(&registry, &mut package, &mut token, &did_token, ctx(&mut scenario));
+            controller::destroy_delegation_token_for_testing(did_token);
             test_scenario::return_shared(registry);
             test_scenario::return_shared(package);
             test_scenario::return_to_sender(&scenario, token);
@@ -1269,4 +1400,5 @@ module nplex::ltc1_tests {
 
         test_scenario::end(scenario);
     }
+
 }

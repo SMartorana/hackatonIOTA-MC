@@ -18,17 +18,20 @@ module nplex::events {
     /// Emitted when a notarization is revoked
     public struct NotarizationRevoked has copy, drop {
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when a notarization revocation is undone
     public struct NotarizationUnrevoked has copy, drop {
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when the authorized creator for a notarization is updated
     public struct AuthorizedCreatorUpdated has copy, drop {
         notarization_id: iota::object::ID,
         new_creator: address,
+        backing_notarization_id: iota::object::ID,
     }
 
     /// Emitted when an executor module is added
@@ -76,6 +79,33 @@ module nplex::events {
         nominal_value: u64
     }
 
+    /// Emitted when the owner DID is set or updated on an LTC1 Package
+    public struct OwnerDidUpdated has copy, drop {
+        package_id: iota::object::ID,
+        owner_did: option::Option<address>,
+    }
+
+    /// Emitted when an Identity is approved/whitelisted for the first time
+    public struct IdentityApproved has copy, drop {
+        identity_id: iota::object::ID,
+        role: u8,
+        backing_notarization_id: iota::object::ID,
+    }
+
+    /// Emitted when an already-approved Identity's role is updated
+    public struct IdentityRoleUpdated has copy, drop {
+        identity_id: iota::object::ID,
+        old_role: u8,
+        new_role: u8,
+        backing_notarization_id: iota::object::ID,
+    }
+
+    /// Emitted when an Identity is revoked from the whitelist
+    public struct IdentityRevoked has copy, drop {
+        identity_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
+    }
+
     /// Emitted when an investor buys LTC1 tokens
     public struct TokenPurchased has copy, drop {
         package_id: iota::object::ID,
@@ -112,11 +142,10 @@ module nplex::events {
         investor: address,
     }
 
-    /// Emitted when an owner bond is transferred
-    public struct BondTransferred has copy, drop {
-        bond_id: iota::object::ID,
+    /// Emitted when package ownership is transferred to a new DID
+    public struct OwnershipTransferred has copy, drop {
         package_id: iota::object::ID,
-        new_owner: address,
+        new_owner_identity: iota::object::ID,
     }
 
     /// Emitted when sales state is toggled
@@ -181,23 +210,27 @@ module nplex::events {
 
     public(package) fun emit_notarization_revoked(
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     ) {
-        iota::event::emit(NotarizationRevoked { notarization_id });
+        iota::event::emit(NotarizationRevoked { notarization_id, backing_notarization_id });
     }
 
     public(package) fun emit_notarization_unrevoked(
         notarization_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
     ) {
-        iota::event::emit(NotarizationUnrevoked { notarization_id });
+        iota::event::emit(NotarizationUnrevoked { notarization_id, backing_notarization_id });
     }
 
     public(package) fun emit_authorized_creator_updated(
         notarization_id: iota::object::ID,
         new_creator: address,
+        backing_notarization_id: iota::object::ID,
     ) {
         iota::event::emit(AuthorizedCreatorUpdated {
             notarization_id,
             new_creator,
+            backing_notarization_id,
         });
     }
 
@@ -327,15 +360,59 @@ module nplex::events {
         });
     }
 
-    public(package) fun emit_bond_transferred(
-        bond_id: iota::object::ID,
+    public(package) fun emit_ownership_transferred(
         package_id: iota::object::ID,
-        new_owner: address,
+        new_owner_identity: iota::object::ID,
     ) {
-        iota::event::emit(BondTransferred {
-            bond_id,
+        iota::event::emit(OwnershipTransferred {
             package_id,
-            new_owner,
+            new_owner_identity,
+        });
+    }
+
+    public(package) fun emit_owner_did_updated(
+        package_id: iota::object::ID,
+        owner_did: option::Option<address>,
+    ) {
+        iota::event::emit(OwnerDidUpdated {
+            package_id,
+            owner_did,
+        });
+    }
+
+    public(package) fun emit_identity_approved(
+        identity_id: iota::object::ID,
+        role: u8,
+        backing_notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(IdentityApproved {
+            identity_id,
+            role,
+            backing_notarization_id,
+        });
+    }
+
+    public(package) fun emit_identity_role_updated(
+        identity_id: iota::object::ID,
+        old_role: u8,
+        new_role: u8,
+        backing_notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(IdentityRoleUpdated {
+            identity_id,
+            old_role,
+            new_role,
+            backing_notarization_id,
+        });
+    }
+
+    public(package) fun emit_identity_revoked(
+        identity_id: iota::object::ID,
+        backing_notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(IdentityRevoked {
+            identity_id,
+            backing_notarization_id,
         });
     }
 

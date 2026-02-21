@@ -14,6 +14,8 @@ use iota::table::{Self, Table};
 use iota::dynamic_field as df;
 use iota::package;
 use iota::clock::{Self, Clock};
+use iota_identity::controller::DelegationToken;
+use iota_notarization::notarization::Notarization;
 
 // ==================== Error Codes ====================
 
@@ -43,6 +45,24 @@ const E_NOTARIZATION_NOT_REVOKED: u64 = 8;
 
 /// Notarization already revoked
 const E_NOTARIZATION_ALREADY_REVOKED: u64 = 9;
+
+/// Identity not approved in whitelist
+const E_IDENTITY_NOT_APPROVED: u64 = 10;
+
+/// Identity does not have required role
+const E_IDENTITY_WRONG_ROLE: u64 = 11;
+
+/// Invalid role value
+const E_INVALID_ROLE: u64 = 12;
+
+// ==================== Role Constants ====================
+
+/// Institution role (originators, servicers)
+const ROLE_INSTITUTION: u8 = 1;
+/// Investor role
+const ROLE_INVESTOR: u8 = 2;
+/// Admin role (NPLEX platform admin)
+const ROLE_ADMIN: u8 = 4;
 
 // ==================== Display Constants ====================
 
@@ -84,7 +104,9 @@ public struct NPLEXRegistry has key {
     /// Maps Bond ID -> Notarized transfer authorization
     authorized_transfers: Table<ID, NotarizedTransfer>,
     /// Maps LTC1Package ID -> Notarized sales toggle authorization
-    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>
+    authorized_sales_toggles: Table<ID, NotarizedSaleToggle>,
+    /// Maps Identity object ID -> ApprovedIdentity (DID whitelist)
+    approved_identities: Table<ID, ApprovedIdentity>,
 }
 
 /// Information about an approved notarization
@@ -111,6 +133,8 @@ public struct NotarizedTransfer has store, copy, drop {
     notarization_id: ID,
     /// The authorized recipient of the bond
     new_owner: address,
+    /// The DID Identity of the new owner explicitly approved by NPLEX Admin
+    new_owner_identity: ID,
 }
 
 /// Notarized sales toggle authorization — ties a sales state change to a specific notarization
@@ -119,6 +143,14 @@ public struct NotarizedSaleToggle has store, copy, drop {
     notarization_id: ID,
     /// The target sales state (true = open, false = closed)
     target_state: bool,
+}
+
+/// Information about an approved DID identity
+/// The link between a user's address and their DID Identity is proven
+/// at runtime via DelegationToken, never stored statically.
+public struct ApprovedIdentity has store, copy, drop {
+    /// Bitmask role: 1 = Institution, 2 = Investor, 4 = Admin (combinable)
+    role: u8,
 }
 
 // ==================== Initialization ====================
@@ -161,6 +193,7 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
         approved_notarizations: table::new(ctx),
         authorized_transfers: table::new(ctx),
         authorized_sales_toggles: table::new(ctx),
+        approved_identities: table::new(ctx),
     };
     transfer::share_object(registry);
 
@@ -211,43 +244,49 @@ public entry fun update_authorized_creator(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     notarization_id: ID,
-    new_creator: address
+    new_creator: address,
+    backing_notarization: &Notarization<u256>,
 ) {
+    let backing_notarization_id = object::id(backing_notarization);
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
     
     hash_info.authorized_creator = new_creator;
 
-    events::emit_authorized_creator_updated(notarization_id, new_creator);
+    events::emit_authorized_creator_updated(notarization_id, new_creator, backing_notarization_id);
 }
 
 /// Revoke a previously approved notarization
 public entry fun revoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    notarization_id: ID
+    notarization_id: ID,
+    backing_notarization: &Notarization<u256>,
 ) {
+    let backing_notarization_id = object::id(backing_notarization);
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(!hash_info.is_revoked, E_NOTARIZATION_ALREADY_REVOKED);
     hash_info.is_revoked = true;
 
-    events::emit_notarization_revoked(notarization_id);
+    events::emit_notarization_revoked(notarization_id, backing_notarization_id);
 }
 
 /// Un-revoke a notarization
 public entry fun unrevoke_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
-    notarization_id: ID
+    notarization_id: ID,
+    backing_notarization: &Notarization<u256>,
 ) {
+    let backing_notarization_id = object::id(backing_notarization);
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(hash_info.is_revoked, E_NOTARIZATION_NOT_REVOKED);
     hash_info.is_revoked = false;
 
-    events::emit_notarization_unrevoked(notarization_id);
+    events::emit_notarization_unrevoked(notarization_id, backing_notarization_id);
 }
 
 /// Add an allowed executor module
@@ -274,21 +313,51 @@ public entry fun remove_executor<T>(
     };
 }
 
-/// Authorize a Bond Transfer for a specific contract
+/// Finalize hash usage by binding it to an LTC1 contract ID
+public fun bind_executor<T: drop>(
+    registry: &mut NPLEXRegistry,
+    claim: NotarizationClaim,
+    new_contract_id: ID,
+    _witness: T
+) {
+    // Verify witness type is allowed
+    assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
+
+    let NotarizationClaim { notarization_id, document_hash: _ } = claim;
+    
+    let notarization_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
+    
+    // Double check
+    assert!(std::option::is_none(&notarization_info.contract_id), E_NOTARIZATION_ALREADY_USED);
+    
+    // Mark as used
+    std::option::fill(&mut notarization_info.contract_id, new_contract_id);
+}
+
+/// Authorize an Ownership Transfer for a specific contract
 /// Invariant: only callable by NPLEX admin
 public entry fun authorize_transfer(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
     contract_id: ID,
     new_owner: address,
+    identity_id: ID, // The Identity that `new_owner` represents
     notarization_id: ID
 ) {
+    // 1. Verify Identity exists
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    let identity = table::borrow(&registry.approved_identities, identity_id);
+
+    // 2. Verify Role (Must be Institution to own a package)
+    assert!(identity.role & ROLE_INSTITUTION != 0, E_IDENTITY_WRONG_ROLE);
+
     if (table::contains(&registry.authorized_transfers, contract_id)) {
         table::remove(&mut registry.authorized_transfers, contract_id);
     };
     table::add(&mut registry.authorized_transfers, contract_id, NotarizedTransfer {
         notarization_id,
         new_owner,
+        new_owner_identity: identity_id,
     });
 
     events::emit_transfer_authorized(contract_id, new_owner, notarization_id);
@@ -313,6 +382,44 @@ public entry fun authorize_sales_toggle(
     });
 
     events::emit_sales_toggle_authorized(contract_id, new_state, notarization_id);
+}
+
+/// Whitelist a DID Identity for a specific role (Admin Only)
+/// role: 1 = Institution, 2 = Investor, 4 = Admin (bitmask, combinable up to 7)
+public entry fun approve_identity(
+    registry: &mut NPLEXRegistry,
+    _admin_cap: &NPLEXAdminCap,
+    identity_id: ID,
+    role: u8,
+    backing_notarization: &Notarization<u256>,
+) {
+    let backing_notarization_id = object::id(backing_notarization);
+    assert!(role >= 1 && role <= 7, E_INVALID_ROLE);
+
+    if (table::contains(&registry.approved_identities, identity_id)) {
+        // Update existing role
+        let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
+        let old_role = info.role;
+        info.role = role;
+        events::emit_identity_role_updated(identity_id, old_role, role, backing_notarization_id);
+    } else {
+        table::add(&mut registry.approved_identities, identity_id, ApprovedIdentity { role });
+        events::emit_identity_approved(identity_id, role, backing_notarization_id);
+    };
+}
+
+/// Remove a DID Identity from the whitelist (Admin Only)
+public entry fun revoke_identity(
+    registry: &mut NPLEXRegistry,
+    _admin_cap: &NPLEXAdminCap,
+    identity_id: ID,
+    backing_notarization: &Notarization<u256>,
+) {
+    let backing_notarization_id = object::id(backing_notarization);
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    table::remove(&mut registry.approved_identities, identity_id);
+
+    events::emit_identity_revoked(identity_id, backing_notarization_id);
 }
 
 // ==================== Validation Functions ====================
@@ -340,33 +447,13 @@ public fun claim_notarization(
     NotarizationClaim { notarization_id, document_hash: notarization_info.document_hash }
 }
 
-/// Finalize hash usage by binding it to an LTC1 contract ID
-public fun bind_executor<T: drop>(
-    registry: &mut NPLEXRegistry,
-    claim: NotarizationClaim,
-    new_contract_id: ID,
-    _witness: T
-) {
-    // Verify witness type is allowed
-    assert!(df::exists_(&registry.id, ExecutorKey<T> {}), E_UNAUTHORIZED_EXECUTOR);
-
-    let NotarizationClaim { notarization_id, document_hash: _ } = claim;
-    
-    let notarization_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
-    
-    // Double check
-    assert!(std::option::is_none(&notarization_info.contract_id), E_NOTARIZATION_ALREADY_USED);
-    
-    // Mark as used
-    std::option::fill(&mut notarization_info.contract_id, new_contract_id);
-}
-
 /// Consume a transfer ticket to allow Bond transfer
 /// Validates that the Caller (via Witness) is authorized, the Transfer is approved by NPLEX,
 public fun consume_transfer_ticket<T: drop>(
     registry: &mut NPLEXRegistry,
     bond_id: ID,
     new_owner: address,
+    new_owner_identity: ID,
     _witness: T
 ) {
     // 1. Verify Witness (Caller) is an allowed executor
@@ -375,9 +462,10 @@ public fun consume_transfer_ticket<T: drop>(
     // 2. Verify Transfer is Authorized
     assert!(table::contains(&registry.authorized_transfers, bond_id), E_TRANSFER_NOT_AUTHORIZED);
     
-    // 3. Verify Recipient matches
+    // 3. Verify Recipient and Identity matches
     let authorization = *table::borrow(&registry.authorized_transfers, bond_id);
     assert!(authorization.new_owner == new_owner, E_TRANSFER_NOT_AUTHORIZED);
+    assert!(authorization.new_owner_identity == new_owner_identity, E_TRANSFER_NOT_AUTHORIZED);
 
     // 4. Consume Ticket
     table::remove(&mut registry.authorized_transfers, bond_id);
@@ -406,6 +494,27 @@ public fun consume_sales_toggle_ticket<T: drop>(
 
     target_state
 }
+
+/// Verify that a DelegationToken's Identity is whitelisted with the required role
+/// required_role: ROLE_INSTITUTION (1), ROLE_INVESTOR (2), or ROLE_ADMIN (4)
+public fun verify_identity(
+    registry: &NPLEXRegistry,
+    token: &DelegationToken,
+    required_role: u8,
+) {
+    let identity_id = iota_identity::controller::delegation_token_controller_of(token);
+    assert!(table::contains(&registry.approved_identities, identity_id), E_IDENTITY_NOT_APPROVED);
+    let info = table::borrow(&registry.approved_identities, identity_id);
+    // Bitmask check: role must contain required_role bits
+    assert!(info.role & required_role != 0, E_IDENTITY_WRONG_ROLE);
+}
+
+
+// ==================== Role Accessors ====================
+
+public fun role_institution(): u8 { ROLE_INSTITUTION }
+public fun role_investor(): u8 { ROLE_INVESTOR }
+public fun role_admin(): u8 { ROLE_ADMIN }
 
 // ==================== Idempotent Functions ====================
 

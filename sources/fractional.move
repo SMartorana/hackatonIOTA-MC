@@ -121,7 +121,7 @@ public entry fun redeem<F, P>(
     );
 
     // 5. Transfer the new token to the caller
-    iota::transfer::public_transfer(token, ctx.sender());
+    ltc1::send_token_to(token, ctx.sender());
 
     // 5.5 Emit redeem event
     events::emit_fraction_redeemed(
