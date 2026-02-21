@@ -57,6 +57,12 @@ module nplex::events {
         new_owner: address,
     }
 
+    /// Emitted when a previously authorized transfer is revoked/overwritten
+    public struct TransferRevoked has copy, drop {
+        contract_id: iota::object::ID,
+        notarization_id: iota::object::ID,
+    }
+
     /// Emitted when a sales toggle is authorized by NPLEX
     public struct SalesToggleAuthorized has copy, drop {
         contract_id: iota::object::ID,
@@ -68,6 +74,12 @@ module nplex::events {
     public struct SalesToggleConsumed has copy, drop {
         contract_id: iota::object::ID,
         new_state: bool,
+    }
+
+    /// Emitted when a previously authorized sales toggle is revoked/overwritten
+    public struct SalesToggleRevoked has copy, drop {
+        contract_id: iota::object::ID,
+        notarization_id: iota::object::ID,
     }
 
     // ==================== LTC1 Events ====================
@@ -265,6 +277,13 @@ module nplex::events {
         iota::event::emit(TransferConsumed { bond_id, new_owner });
     }
 
+    public(package) fun emit_transfer_revoked(
+        contract_id: iota::object::ID,
+        notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(TransferRevoked { contract_id, notarization_id });
+    }
+
     public(package) fun emit_sales_toggle_authorized(
         contract_id: iota::object::ID,
         target_state: bool,
@@ -282,6 +301,13 @@ module nplex::events {
         new_state: bool,
     ) {
         iota::event::emit(SalesToggleConsumed { contract_id, new_state });
+    }
+
+    public(package) fun emit_sales_toggle_revoked(
+        contract_id: iota::object::ID,
+        notarization_id: iota::object::ID,
+    ) {
+        iota::event::emit(SalesToggleRevoked { contract_id, notarization_id });
     }
 
     // ==================== LTC1 Emitters ====================

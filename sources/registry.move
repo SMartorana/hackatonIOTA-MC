@@ -55,6 +55,9 @@ const E_IDENTITY_WRONG_ROLE: u64 = 11;
 /// Invalid role value
 const E_INVALID_ROLE: u64 = 12;
 
+/// Authorized creator already set to this value
+const E_AUTHORIZED_CREATOR_ALREADY_SET: u64 = 13;
+
 // ==================== Role Constants ====================
 
 /// Institution role (originators, servicers)
@@ -251,6 +254,7 @@ public entry fun update_authorized_creator(
     assert!(table::contains(&registry.approved_notarizations, notarization_id), E_NOTARIZATION_NOT_APPROVED);
     let hash_info = table::borrow_mut(&mut registry.approved_notarizations, notarization_id);
     assert!(option::is_none(&hash_info.contract_id), E_NOTARIZATION_ALREADY_USED);
+    assert!(hash_info.authorized_creator != new_creator, E_AUTHORIZED_CREATOR_ALREADY_SET);
     
     hash_info.authorized_creator = new_creator;
 
@@ -335,6 +339,7 @@ public fun bind_executor<T: drop>(
 }
 
 /// Authorize an Ownership Transfer for a specific contract
+/// If there is already an authorized transfer, it will be revoked.
 /// Invariant: only callable by NPLEX admin
 public entry fun authorize_transfer(
     registry: &mut NPLEXRegistry,
@@ -353,6 +358,7 @@ public entry fun authorize_transfer(
 
     if (table::contains(&registry.authorized_transfers, contract_id)) {
         table::remove(&mut registry.authorized_transfers, contract_id);
+        events::emit_transfer_revoked(contract_id, notarization_id);
     };
     table::add(&mut registry.authorized_transfers, contract_id, NotarizedTransfer {
         notarization_id,
@@ -364,6 +370,7 @@ public entry fun authorize_transfer(
 }
 
 /// Authorize a Sales Toggle for a specific contract
+/// If there is already an authorized sales toggle, it will be revoked.
 /// Invariant: only callable by NPLEX admin
 /// new_state: true = open sales, false = close sales
 public entry fun authorize_sales_toggle(
@@ -375,6 +382,7 @@ public entry fun authorize_sales_toggle(
 ) {
     if (table::contains(&registry.authorized_sales_toggles, contract_id)) {
         table::remove(&mut registry.authorized_sales_toggles, contract_id);
+        events::emit_sales_toggle_revoked(contract_id, notarization_id);
     };
     table::add(&mut registry.authorized_sales_toggles, contract_id, NotarizedSaleToggle {
         notarization_id,
@@ -400,6 +408,9 @@ public entry fun approve_identity(
         // Update existing role
         let info = table::borrow_mut(&mut registry.approved_identities, identity_id);
         let old_role = info.role;
+        if (old_role == role) {
+            return
+        };
         info.role = role;
         events::emit_identity_role_updated(identity_id, old_role, role, backing_notarization_id);
     } else {
