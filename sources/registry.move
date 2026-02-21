@@ -211,6 +211,8 @@ fun init(otw: REGISTRY, ctx: &mut TxContext) {
 /// Register a new approved notarization in the registry
 /// These are the documents which are used only for create_contract
 /// Notarizations for other approvals are managed in other tables not in approved_notarizations
+/// A note on this: The fact that we pass notarization_id and document_hash instead of the notarization object is because
+/// the locked notarization object cannot be traded. The user has to create it and have it audited then pass it to the create_contract function.
 public entry fun register_notarization(
     registry: &mut NPLEXRegistry,
     _admin_cap: &NPLEXAdminCap,
