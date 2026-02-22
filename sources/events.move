@@ -82,21 +82,6 @@ module nplex::events {
         notarization_id: iota::object::ID,
     }
 
-    // ==================== LTC1 Events ====================
-
-    /// Emitted when a new LTC1 Contract/Package is created
-    public struct ContractCreated has copy, drop {
-        package_id: iota::object::ID,
-        creator: address,
-        nominal_value: u64
-    }
-
-    /// Emitted when the owner DID is set or updated on an LTC1 Package
-    public struct OwnerDidUpdated has copy, drop {
-        package_id: iota::object::ID,
-        owner_did: option::Option<address>,
-    }
-
     /// Emitted when an Identity is approved/whitelisted for the first time
     public struct IdentityApproved has copy, drop {
         identity_id: iota::object::ID,
@@ -110,6 +95,21 @@ module nplex::events {
         old_role: u8,
         new_role: u8,
         backing_notarization_id: iota::object::ID,
+    }
+
+    // ==================== LTC1 Events ====================
+
+    /// Emitted when a new LTC1 Contract/Package is created
+    public struct ContractCreated has copy, drop {
+        package_id: iota::object::ID,
+        creator: address,
+        nominal_value: u64
+    }
+
+    /// Emitted when the owner DID is set or updated on an LTC1 Package
+    public struct OwnerDidUpdated has copy, drop {
+        package_id: iota::object::ID,
+        owner_did: option::Option<address>,
     }
 
     /// Emitted when an Identity is revoked from the whitelist

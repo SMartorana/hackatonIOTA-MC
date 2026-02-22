@@ -7,6 +7,9 @@ local = "_deps/notarization/notarization-move"
 
 [dependencies.IotaIdentity]
 local = "_deps/identity/identity_iota_core/packages/iota_identity"
+#git = "https://github.com/iotaledger/identity"
+#subdir = "identity_iota_core/packages/iota_identity"
+#rev = "main"
 
 [addresses]
 nplex = "0x0"
