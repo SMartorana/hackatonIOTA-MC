@@ -170,7 +170,7 @@ public entry fun create_contract<T>(
     assert!(total_supply >= MIN_SUPPLY, E_SUPPLY_TOO_LOW);
 
     // 2. Claim notarization
-    let claim = registry::claim_notarization(registry, notary_object_id, ctx);
+    let claim = registry::claim_notarization(registry, notary_object_id, document_hash, ctx);
 
     // 3. Create UID for Package
     let package_uid = iota::object::new(ctx);

@@ -306,7 +306,7 @@ module nplex::registry_tests {
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -320,7 +320,7 @@ module nplex::registry_tests {
             let id2 = object::id_from_address(@0x101);
             
             // This should abort with E_NOTARIZATION_ALREADY_USED
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -344,7 +344,7 @@ module nplex::registry_tests {
             // In unit tests, we can generate IDs from addresses
             let id1 = object::id_from_address(@0x101);
             
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id1, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -358,7 +358,7 @@ module nplex::registry_tests {
             let id2 = object::id_from_address(@0x102);
             
             // This should abort with E_NOTARIZATION_ALREADY_USED
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id2, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -382,7 +382,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x103);
             
             // This should abort with E_NOTARIZATION_NOT_APPROVED
-            let claim = registry::claim_notarization(&mut registry, unverified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, unverified_notarization_id(), Unverified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -405,7 +405,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x104);
             
             // This should abort with E_NOTARIZATION_REVOKED
-            let claim = registry::claim_notarization(&mut registry, revoked_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, revoked_notarization_id(), Revoked_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             test_scenario::return_shared(registry);
@@ -428,7 +428,7 @@ module nplex::registry_tests {
             let id = object::id_from_address(@0x105);
             
             // This should fail because UnauthorizedWitness is not in the table
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, UnauthorizedWitness {});
             
             test_scenario::return_shared(registry);
@@ -582,7 +582,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             let id = object::id_from_address(@0x106);
             
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             registry::bind_executor(&mut registry, claim, id, TestWitness {});
             
             assert!(registry::is_notarization_used(&registry, verified_notarization_id()), 0);
@@ -623,7 +623,7 @@ module nplex::registry_tests {
             let mut registry = test_scenario::take_shared<NPLEXRegistry>(&scenario);
             
             // This should abort with E_UNAUTHORIZED_CREATOR
-            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), test_scenario::ctx(&mut scenario));
+            let claim = registry::claim_notarization(&mut registry, verified_notarization_id(), Verified_hash, test_scenario::ctx(&mut scenario));
             
             // Should not reach here
             registry::burn_notarization_claim(claim);

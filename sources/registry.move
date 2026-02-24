@@ -447,6 +447,7 @@ public entry fun revoke_identity(
 public fun claim_notarization(
     registry: &mut NPLEXRegistry,
     notarization_id: ID,
+    document_hash: u256,
     ctx: &mut TxContext
 ): NotarizationClaim {
     // Verify notarization is approved
@@ -454,6 +455,9 @@ public fun claim_notarization(
     
     let notarization_info = table::borrow(&registry.approved_notarizations, notarization_id);
     
+    // Verify document hash matches the approved one mathematically
+    assert!(notarization_info.document_hash == document_hash, E_NOTARIZATION_NOT_APPROVED);
+
     // Verify not revoked
     assert!(!notarization_info.is_revoked, E_NOTARIZATION_REVOKED);
     
