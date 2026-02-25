@@ -498,6 +498,7 @@ module nplex::fractional_tests {
                 &mut token,
                 &mut vault,
                 coins,
+                ctx(&mut scenario)
             );
 
             // Balance should be back to 100,000

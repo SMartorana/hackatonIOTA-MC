@@ -145,6 +145,7 @@ public entry fun merge_back<F>(
     token: &mut LTC1Token,
     vault: &mut FractionalVault<F>,
     coins: Coin<F>,
+    _ctx: &mut TxContext
 ) {
     let burn_amount = coin::value(&coins);
     assert!(burn_amount > 0, E_ZERO_AMOUNT);
