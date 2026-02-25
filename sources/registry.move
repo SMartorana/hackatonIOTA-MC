@@ -156,7 +156,19 @@ public struct NotarizedSaleToggle has store, copy, drop {
 public struct ApprovedIdentity has store, copy, drop {
     /// Bitmask role: 1 = Institution, 2 = Investor, 4 = Admin (combinable)
     role: u8,
-    /// Raw bytes of the W3C Verifiable Credential used for this approval
+    /// Pseudonymize has to happen by saving Identity information offchain
+    /// reason being that people have the right to be deleted and forgotten
+    /// which cannot happen on an immutable blockchain.
+    /// in this data we should write something like
+    /// {
+    ///  "Did_ID": "0x1234...abcd",
+    ///  "Issuer": "NPLEX",
+    ///  "Role": "Institution",
+    ///  "ApprovedAt": 1708900000
+    /// }
+    /// Moreover when we have a NPLEX DID we should setup a RevocationBitmap2022
+    /// and use this in conjunction with the IOTA SDK to create credentials.
+    /// This is optional put 0x0 if not used and use it only in the future if needed.
     vc_data: vector<u8>,
 }
 
