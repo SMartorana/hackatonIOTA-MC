@@ -589,7 +589,7 @@ module nplex::ltc1_tests {
         next_tx(&mut scenario, NEW_OWNER);
         {
             let package = test_scenario::take_shared_by_id<LTC1Package<IOTA>>(&scenario, package_id);
-            assert!(ltc1::get_package_owner_identity<IOTA>(&package) == new_owner_identity_id(), 0);
+            assert!(ltc1::owner_identity<IOTA>(&package) == new_owner_identity_id(), 0);
             test_scenario::return_shared(package);
         };
 

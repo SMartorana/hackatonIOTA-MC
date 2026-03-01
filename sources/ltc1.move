@@ -557,7 +557,7 @@ public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bo
     package.document_hash == document_hash
 }
 
-public fun get_package_owner_identity<T>(package: &LTC1Package<T>): ID {
+public fun owner_identity<T>(package: &LTC1Package<T>): ID {
     package.owner_identity
 }
 
