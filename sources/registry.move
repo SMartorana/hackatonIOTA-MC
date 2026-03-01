@@ -69,18 +69,20 @@ const ROLE_ADMIN: u8 = 4;
 
 // ==================== Display Constants ====================
 
+// Display standard keys
 const DISPLAY_KEY_NAME: vector<u8> = b"name";
 const DISPLAY_KEY_DESCRIPTION: vector<u8> = b"description";
 const DISPLAY_KEY_IMAGE_URL: vector<u8> = b"image_url";
 const DISPLAY_KEY_PROJECT_URL: vector<u8> = b"project_url";
 
+// Admin Capability Display values
 const ADMIN_DISPLAY_NAME: vector<u8> = b"NPLEX Administrator Capability";
 const ADMIN_DISPLAY_DESCRIPTION: vector<u8> = b"Grants administrative control over the NPLEX Registry.";
 const ADMIN_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/admin_crown.png";
 const ADMIN_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
 
 // ==================== Structs ====================
-/// One-Time Witness for the module
+/// One-Time Witness for the module. Has `drop` ability.
 public struct REGISTRY has drop {}
 
 /// Hot potato struct to ensure hash usage flow
@@ -112,15 +114,15 @@ public struct NPLEXRegistry has key {
     approved_identities: Table<ID, ApprovedIdentity>,
 }
 
-/// Information about an approved notarization
+/// Information about an approved notarization (has store, copy, drop properties)
 public struct NotarizationInfo has store, copy, drop {
-    /// The document hash associated with this notarization
+    /// The document hash associated with this notarization (u256)
     document_hash: u256,
-    /// When this hash was approved
+    /// When this hash was approved (u64)
     approved_timestamp: u64,
     /// Address that approved this hash (NPLEX auditor)
     auditor: address,
-    /// Whether this hash has been revoked
+    /// Whether this hash has been revoked (bool)
     is_revoked: bool,
     /// ID of LTC1 contract created with this notarization (None if not yet used)
     contract_id: option::Option<ID>,
@@ -130,21 +132,21 @@ public struct NotarizationInfo has store, copy, drop {
     authorized_creator: address,
 }
 
-/// Notarized transfer authorization — ties a bond transfer to a specific notarization
+/// Notarized transfer authorization — ties a bond transfer to a specific notarization (has store, copy, drop properties)
 public struct NotarizedTransfer has store, copy, drop {
-    /// The notarization backing this transfer authorization
+    /// The notarization backing this transfer authorization: ID
     notarization_id: ID,
-    /// The authorized recipient of the bond
+    /// The authorized recipient of the bond: address
     new_owner: address,
-    /// The DID Identity of the new owner explicitly approved by NPLEX Admin
+    /// The DID Identity of the new owner explicitly approved by NPLEX Admin: ID
     new_owner_identity: ID,
 }
 
-/// Notarized sales toggle authorization — ties a sales state change to a specific notarization
+/// Notarized sales toggle authorization — ties a sales state change to a specific notarization (has store, copy, drop properties)
 public struct NotarizedSaleToggle has store, copy, drop {
-    /// The notarization backing this sales toggle authorization
+    /// The notarization backing this sales toggle authorization: ID
     notarization_id: ID,
-    /// The target sales state (true = open, false = closed)
+    /// The target sales state (true = open, false = closed): bool
     target_state: bool,
 }
 
@@ -169,6 +171,7 @@ public struct ApprovedIdentity has store, copy, drop {
     /// Moreover when we have a NPLEX DID we should setup a RevocationBitmap2022
     /// and use this in conjunction with the IOTA SDK to create credentials.
     /// This is optional put 0x0 if not used and use it only in the future if needed.
+    /// (non-empty, VC audit trail)
     vc_data: vector<u8>,
 }
 
@@ -548,6 +551,7 @@ public fun verify_identity(
 // ==================== Role Accessors ====================
 
 /// Get the role of a given DID Identity (returns 0 if not approved/not found)
+/// Signature: `get_identity_role(&NPLEXRegistry, ID) -> u8`
 public fun get_identity_role(
     registry: &NPLEXRegistry,
     identity_id: ID
@@ -559,8 +563,11 @@ public fun get_identity_role(
     }
 }
 
+/// Accessor for ROLE_INSTITUTION constant
 public fun role_institution(): u8 { ROLE_INSTITUTION }
+/// Accessor for ROLE_INVESTOR constant
 public fun role_investor(): u8 { ROLE_INVESTOR }
+/// Accessor for ROLE_ADMIN constant
 public fun role_admin(): u8 { ROLE_ADMIN }
 
 // ==================== Idempotent Functions ====================

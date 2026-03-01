@@ -44,6 +44,7 @@ const TOKEN_DISPLAY_DESCRIPTION: vector<u8> = b"Investor share for LTC1 Package 
 const TOKEN_DISPLAY_IMAGE_URL: vector<u8> = b"https://api.nplex.eu/icons/token_blue.png";
 const TOKEN_DISPLAY_PROJECT_URL: vector<u8> = b"https://nplex.eu";
 
+// Display standard keys
 const DISPLAY_KEY_NAME: vector<u8> = b"name";
 const DISPLAY_KEY_DESCRIPTION: vector<u8> = b"description";
 const DISPLAY_KEY_IMAGE_URL: vector<u8> = b"image_url";
@@ -52,6 +53,7 @@ const DISPLAY_KEY_PROJECT_URL: vector<u8> = b"project_url";
 // ==================== Structs ====================
 
 /// The OTW for package initialization
+/// The `drop` ability ensures it's a valid One-Time Witness.
 public struct LTC1 has drop {}
 
 /// The LTC1 Witness for Registry Binding
@@ -61,12 +63,13 @@ public struct LTC1Witness has drop {}
 /// Represents a share of the NPL package and revenue rights.
 /// No `store` ability — transfers are DID-gated via `transfer_token`.
 public struct LTC1Token has key {
+    /// Unique identifier: UID
     id: UID,
-    /// Number of "shares" this token represents
+    /// Number of "shares" this token represents: u64
     balance: u64,
-    /// Reference to parent LTC1Package
+    /// Reference to parent LTC1Package: ID
     package_id: ID,
-    /// Total IOTA this token has already claimed
+    /// Total Coin<T> this token has already claimed: u64
     claimed_revenue: u64,
 }
 
@@ -540,19 +543,23 @@ public entry fun claim_revenue<T>(
 
 // ==================== Accessors ====================
 
+/// Accessor for `LTC1Token.balance`
 public fun balance(token: &LTC1Token): u64 {
     token.balance
 }
 
+/// Accessor for `LTC1Token.claimed_revenue`
 public fun claimed_revenue(token: &LTC1Token): u64 {
     token.claimed_revenue
 }
 
+/// Accessor for `LTC1Token.package_id`
 public fun package_id(token: &LTC1Token): ID {
     token.package_id
 }
 
 /// Verify if a proposed document hash matches the package's registered hash
+/// Returns true if `document_hash` equals `package.document_hash`.
 public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bool {
     package.document_hash == document_hash
 }

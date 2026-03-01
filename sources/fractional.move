@@ -207,14 +207,20 @@ public entry fun destroy_empty_vault<F>(
 
 // ==================== Accessors ====================
 
+/// Returns the package ID of the fractionalized token.
+/// Retrieves `FractionalVault.package_id`.
 public fun vault_package_id<F>(vault: &FractionalVault<F>): ID {
     vault.package_id
 }
 
+/// Returns the total supply of the fractionalized token.
+/// Calculates standard `coin::total_supply` using `FractionalVault.treasury_cap`.
 public fun vault_total_supply<F>(vault: &FractionalVault<F>): u64 {
     coin::total_supply(&vault.treasury_cap)
 }
 
+/// Returns the total amount of coins that were fractionalized.
+/// Retrieves `FractionalVault.total_fractionalized`.
 public fun vault_total_fractionalized<F>(vault: &FractionalVault<F>): u64 {
     vault.total_fractionalized
 }

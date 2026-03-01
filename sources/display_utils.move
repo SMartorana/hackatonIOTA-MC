@@ -8,7 +8,9 @@ module nplex::display_utils {
     use std::string::String;
 
     /// Generic macro to setup display for any type T
-    /// Takes keys and values as arguments
+    /// Takes keys and values as arguments.
+    /// Architecture definition: package-private macro `setup_display<T>(Publisher, keys, values, ctx)` 
+    /// -> creates Display, calls update_version, share_object.
     public(package) macro fun setup_display<$T>(
         $publisher: &package::Publisher,
         $keys: vector<String>,
