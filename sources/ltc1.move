@@ -557,6 +557,10 @@ public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bo
     package.document_hash == document_hash
 }
 
+public fun get_package_owner_identity<T>(package: &LTC1Package<T>): ID {
+    package.owner_identity
+}
+
 // ==================== Package-Private Helpers (for fractional.move) ====================
 
 /// Subtract `amount` from a token's balance, splitting claimed_revenue proportionally.
@@ -601,9 +605,3 @@ public(package) fun add_fraction_balance(
     token.claimed_revenue = token.claimed_revenue + claimed_revenue;
 }
 
-// ==================== Testing Functions ====================
-
-#[test_only]
-public fun get_package_owner_identity<T>(package: &LTC1Package<T>): ID {
-    package.owner_identity
-}
