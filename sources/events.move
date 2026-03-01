@@ -99,6 +99,12 @@ module nplex::events {
 
     // ==================== LTC1 Events ====================
 
+    /// Emitted when a LTC1Token is transferred
+    public struct TokenTransferred has copy, drop {
+        token_id: iota::object::ID,
+        new_owner: address,
+    }
+
     /// Emitted when a new LTC1 Contract/Package is created
     public struct ContractCreated has copy, drop {
         package_id: iota::object::ID,
@@ -305,6 +311,16 @@ module nplex::events {
     }
 
     // ==================== LTC1 Emitters ====================
+
+    public(package) fun emit_transfer_token(
+        token_id: iota::object::ID,
+        new_owner: address,
+    ) {
+        iota::event::emit(TokenTransferred {
+            token_id,
+            new_owner,
+        });
+    }
 
     public(package) fun emit_contract_created(
         package_id: iota::object::ID,

@@ -457,7 +457,9 @@ public entry fun transfer_token(
 ) {
     // Verify sender is whitelisted Investor
     registry::verify_identity(registry, sender_did, registry::role_investor());
+    let token_id = iota::object::uid_to_inner(&token.id);
     iota::transfer::transfer(token, recipient);
+    events::emit_transfer_token(token_id, recipient);
 }
 
 /// Package-internal helper: transfer a LTC1Token to an address.
@@ -497,7 +499,7 @@ public entry fun toggle_sales<T>(
 
 /// Claim Revenue for Investors
 /// Investors can claim their share of the revenue based on their token balance.
-/// Allowed even if the contract is revoked (so investors can exit).
+/// Maybe should be allowed even if the contract is revoked (so investors can exit), to check later when a better control over permissions is implemented.
 public entry fun claim_revenue<T>(
     registry: &NPLEXRegistry,
     package: &mut LTC1Package<T>,
@@ -564,6 +566,7 @@ public fun verify_document<T>(package: &LTC1Package<T>, document_hash: u256): bo
     package.document_hash == document_hash
 }
 
+/// Accessor for `LTC1Package.owner_identity`
 public fun owner_identity<T>(package: &LTC1Package<T>): ID {
     package.owner_identity
 }
