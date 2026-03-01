@@ -547,6 +547,18 @@ public fun verify_identity(
 
 // ==================== Role Accessors ====================
 
+/// Get the role of a given DID Identity (returns 0 if not approved/not found)
+public fun get_identity_role(
+    registry: &NPLEXRegistry,
+    identity_id: ID
+): u8 {
+    if (table::contains(&registry.approved_identities, identity_id)) {
+        table::borrow(&registry.approved_identities, identity_id).role
+    } else {
+        0
+    }
+}
+
 public fun role_institution(): u8 { ROLE_INSTITUTION }
 public fun role_investor(): u8 { ROLE_INVESTOR }
 public fun role_admin(): u8 { ROLE_ADMIN }
