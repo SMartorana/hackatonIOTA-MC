@@ -1,0 +1,41 @@
+name: Generate and Deploy IOTA Move Docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup IOTA CLI
+        run: |
+          wget -qO iota.tgz "https://github.com/iotaledger/iota/releases/download/v1.17.2/iota-v1.17.2-linux-x86_64.tgz"
+          tar -xzf iota.tgz
+          mkdir -p ~/.local/bin
+          # La release ufficiale comprime un artefatto omonimo o contenuto in target/
+          find . -type f -name "iota" -exec cp {} ~/.local/bin/iota \;
+          chmod +x ~/.local/bin/iota
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Verify IOTA Installation
+        run: iota --version
+
+      - name: Build Move Documentation
+        run: iota move build --doc
+
+      - name: Deploy to GitHub Pages
+        # Run deploy only on push to main, skip on PRs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/nplex/docs/
+          publish_branch: gh-pages
