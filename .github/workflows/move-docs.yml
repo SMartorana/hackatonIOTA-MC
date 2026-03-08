@@ -28,6 +28,11 @@ jobs:
       - name: Verify IOTA Installation
         run: iota --version
 
+      - name: Fetch Custom Local Dependencies
+        run: |
+          # Fetch the modified _deps folder from Sernior's repository since it is in .gitignore
+          git clone https://github.com/Sernior/NPLEX-modified-dependencies _deps
+
       - name: Build Move Documentation
         run: iota move build --doc
 
