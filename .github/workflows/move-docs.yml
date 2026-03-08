@@ -30,8 +30,9 @@ jobs:
 
       - name: Fetch Custom Local Dependencies
         run: |
-          # Fetch the modified _deps folder from Sernior's repository since it is in .gitignore
-          git clone https://github.com/Sernior/NPLEX-modified-dependencies _deps
+          # Fetch the modified _deps folder from Sernior's private repository
+          # Requires a Personal Access Token (PAT) stored in GitHub Secrets
+          git clone https://${{ secrets.GH_PAT_CLASSIC }}@github.com/Sernior/NPLEX-modified-dependencies.git _deps
 
       - name: Build Move Documentation
         run: iota move build --doc
@@ -62,8 +63,8 @@ jobs:
           mkdir -p build/nplex/docs/assets/css
           mkdir -p build/nplex/docs/_includes
 
-          # Fetch FE globals.css directly
-          curl -sL "https://raw.githubusercontent.com/Sernior/hackatonIOTA-FE/main/src/app/globals.css" > build/nplex/docs/assets/css/globals.css || true
+          # Fetch FE globals.css directly from private repository
+          curl -H "Authorization: token ${{ secrets.GH_PAT_CLASSIC }}" -sL "https://raw.githubusercontent.com/Sernior/hackatonIOTA-FE/main/src/app/globals.css" > build/nplex/docs/assets/css/globals.css || true
 
           # Add a custom tag inside the document HEAD to load the globals.css styles
           echo "<link rel=\"stylesheet\" href=\"{{ '/assets/css/globals.css' | relative_url }}\">" > build/nplex/docs/_includes/head_custom.html
