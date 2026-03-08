@@ -44,6 +44,10 @@ jobs:
 
       - name: Configure GitHub Pages Layout & CSS
         run: |
+          # The move compiler might generate a .nojekyll file, but since we are using 'just-the-docs' (a Jekyll theme),
+          # we desperately need Jekyll to run. Thus, we delete the .nojekyll file!
+          rm -f build/nplex/docs/.nojekyll
+
           # Copy project README.md to be the root index of the docs
           cp README.md build/nplex/docs/index.md
 
@@ -51,6 +55,7 @@ jobs:
           echo "remote_theme: just-the-docs/just-the-docs" > build/nplex/docs/_config.yml
           echo "color_scheme: dark" >> build/nplex/docs/_config.yml
           echo "nav_sort: case_insensitive" >> build/nplex/docs/_config.yml
+          echo "baseurl: /hackatonIOTA-MC" >> build/nplex/docs/_config.yml
 
           # Prepare Jekyll Frontmatter for sidebar navigation (tree view)
           # We add this to every Move module markdown file
