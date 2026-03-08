@@ -11,6 +11,11 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    # Definisce i permessi necessari alla Action per pushare su gh-pages
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
