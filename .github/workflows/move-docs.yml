@@ -52,18 +52,16 @@ jobs:
           # Prepare Frontmatter for the home page (README.md)
           sed -i "1i---\ntitle: Home\nnav_order: 1\n---\n" build/nplex/docs/index.md
 
-          # Inject custom global CSS fetched from the FE repository
-          # Jekyll uses assets/css/style.scss to compile the final style.
+          # Correct way to inject custom global CSS in 'just-the-docs'
+          # We download it as a plain CSS file inside assets, then include it in the HTML Head.
           mkdir -p build/nplex/docs/assets/css
+          mkdir -p build/nplex/docs/_includes
 
-          echo "---" > build/nplex/docs/assets/css/style.scss
-          echo "---" >> build/nplex/docs/assets/css/style.scss
-          echo "@import \"{{ site.theme }}\";" >> build/nplex/docs/assets/css/style.scss
-          echo "" >> build/nplex/docs/assets/css/style.scss
-          echo "/* Custom Global CSS Injected from hackatonIOTA-FE */" >> build/nplex/docs/assets/css/style.scss
+          # Fetch FE globals.css directly
+          curl -sL "https://raw.githubusercontent.com/Sernior/hackatonIOTA-FE/main/src/app/globals.css" > build/nplex/docs/assets/css/globals.css || true
 
-          # Fetch FE globals.css
-          curl -sL "https://raw.githubusercontent.com/Sernior/hackatonIOTA-FE/main/src/app/globals.css" >> build/nplex/docs/assets/css/style.scss || true
+          # Add a custom tag inside the document HEAD to load the globals.css styles
+          echo "<link rel=\"stylesheet\" href=\"{{ '/assets/css/globals.css' | relative_url }}\">" > build/nplex/docs/_includes/head_custom.html
 
       - name: Deploy to GitHub Pages
         # Run deploy only on push to main, skip on PRs
